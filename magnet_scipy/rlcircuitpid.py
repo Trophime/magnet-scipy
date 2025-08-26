@@ -1,0 +1,303 @@
+import numpy as np
+from typing import Tuple
+
+# Import the new PID controller and CSV utilities
+from .pid_controller import PIDController, create_adaptive_pid_controller
+from .csv_utils import create_function_from_csv, create_2d_function_from_csv
+
+
+class RLCircuitPID:
+    """RL Circuit with Adaptive PID Controller and variable resistance from CSV"""
+
+    def __init__(
+        self,
+        R: float = 1.0,
+        L: float = 0.1,
+        pid_controller: PIDController = None,
+        reference_csv: str = None,
+        voltage_csv: str = None,
+        resistance_csv: str = None,
+        temperature: float = 25.0,
+        circuit_id: str = None,  # NEW: Circuit identifier
+        # Backward compatibility: individual PID parameters (deprecated)
+        **pid_kwargs,
+    ):
+        """
+        Initialize circuit parameters with adaptive PID controller
+
+        Args:
+            R: Constant resistance (Ohms) - used if resistance_csv is None
+            L: Inductance (Henry)
+            pid_controller: PIDController instance for managing adaptive PID gains
+            reference_csv: Path to CSV file with reference current data
+            resistance_csv: Path to CSV file with resistance data R(I, Tin)
+            temperature: Temperature (°C) for resistance calculation
+            circuit_id: Unique identifier for this circuit (required for coupled systems)
+            **pid_kwargs: Backward compatibility parameters for creating PID controller
+        """
+        self.L = L
+        self.temperature = temperature
+
+        # Set circuit ID
+        self.circuit_id = circuit_id
+
+        # Initialize PID controller
+        self.pid_controller = None
+        if pid_controller is not None:
+            self.pid_controller = pid_controller
+        else:
+            # Create PID controller from kwargs (backward compatibility)
+            if voltage_csv is None:
+                print(f"create PID from kwargs: {voltage_csv}")
+                self.pid_controller = self._create_pid_from_kwargs(**pid_kwargs)
+
+        # Handle resistance
+        self.use_variable_resistance = False
+        if resistance_csv:
+            self.load_resistance_from_csv(resistance_csv)
+        else:
+            self.R_constant = R
+            print(f"Using constant resistance: {R} Ω")
+
+        # Always initialize these to None first - PREVENTS AttributeError
+        self.reference_func = None
+        self.voltage_func = None
+        self.use_csv_data = False
+
+        # Load reference current from CSV if provided
+        if reference_csv:
+            self.load_reference_from_csv(reference_csv)
+
+        # Load input voltage from CSV if provided
+        if voltage_csv:
+            self.load_voltage_from_csv(voltage_csv)
+
+    def _create_pid_from_kwargs(self, **kwargs) -> PIDController:
+        """
+        Create PID controller from individual parameters for backward compatibility
+        """
+        # Extract PID parameters with defaults
+        pid_params = {
+            "Kp_low": kwargs.get("Kp_low", 10.0),
+            "Ki_low": kwargs.get("Ki_low", 5.0),
+            "Kd_low": kwargs.get("Kd_low", 0.1),
+            "Kp_medium": kwargs.get("Kp_medium", 15.0),
+            "Ki_medium": kwargs.get("Ki_medium", 8.0),
+            "Kd_medium": kwargs.get("Kd_medium", 0.05),
+            "Kp_high": kwargs.get("Kp_high", 25.0),
+            "Ki_high": kwargs.get("Ki_high", 12.0),
+            "Kd_high": kwargs.get("Kd_high", 0.02),
+            "low_threshold": kwargs.get("low_current_threshold", 60.0),
+            "high_threshold": kwargs.get("high_current_threshold", 800.0),
+        }
+
+        return create_adaptive_pid_controller(**pid_params)
+
+    def load_resistance_from_csv(self, csv_file: str):
+        """Load variable resistance from CSV file"""
+        try:
+            self.resistance_func, self.current_range, self.temp_range, self.R_grid = (
+                create_2d_function_from_csv(
+                    csv_file, "current", "temperature", "resistance", method="linear"
+                )
+            )
+            self.use_variable_resistance = True
+            print(f"Loaded variable resistance from {csv_file}")
+            print(
+                f"Current range: {float(self.current_range.min()):.3f} to {float(self.current_range.max()):.3f} A"
+            )
+            print(
+                f"Temperature range: {float(self.temp_range.min()):.1f} to {float(self.temp_range.max()):.1f} °C"
+            )
+        except Exception as e:
+            raise RuntimeError(f"Error loading resistance CSV file {csv_file}: {e}")
+
+    def load_reference_from_csv(self, csv_file: str):
+        """Load reference current from CSV file using Scipy"""
+        print(f"loading reference from csv {csv_file}")
+        try:
+            self.reference_func, self.time_data, self.current_data = (
+                create_function_from_csv(csv_file, "time", "current", method="linear")
+            )
+
+            self.use_csv_data = True
+            print(f"Loaded reference current from {csv_file} using Scipy interpolation")
+            print(
+                f"Time range: {float(self.time_data[0]):.3f} to {float(self.time_data[-1]):.3f} seconds"
+            )
+
+        except Exception as e:
+            raise RuntimeError(f"Error loading CSV file {csv_file}: {e}")
+
+    def load_voltage_from_csv(self, csv_file: str):
+        """Load input voltage from CSV file using Scipy"""
+        print(f"loading voltage from csv {csv_file}")
+        try:
+            self.voltage_func, self.time_data, self.voltage_data = (
+                create_function_from_csv(csv_file, "time", "voltage", method="linear")
+            )
+
+            self.use_csv_data = True
+            print(f"Loaded input voltage from {csv_file} using Scipy interpolation")
+            print(
+                f"Time range: {float(self.time_data[0]):.3f} to {float(self.time_data[-1]):.3f} seconds"
+            )
+
+        except Exception as e:
+            raise RuntimeError(f"Error loading CSV file {csv_file}: {e}")
+
+    def get_pid_parameters(self, i_ref: float) -> Tuple[float, float, float]:
+        """
+        Get PID parameters based on reference current magnitude
+        Delegates to the PID controller
+
+        Args:
+            i_ref: Reference current value
+
+        Returns:
+            Tuple of (Kp, Ki, Kd) for the current operating region
+        """
+        return self.pid_controller.get_pid_parameters(i_ref)
+
+    def get_current_region(self, i_ref: float) -> str:
+        """
+        Get the current operating region name for logging/plotting
+        Delegates to the PID controller
+        """
+        return self.pid_controller.get_current_region_name(i_ref)
+
+    def get_resistance(self, current: float) -> float:
+        """Get resistance value based on current and temperature"""
+        if self.use_variable_resistance:
+            return self.resistance_func(current, self.temperature)
+        else:
+            return self.R_constant
+
+    def reference_current(self, t: float) -> float:
+        """Get reference current at time t"""
+        return self.reference_func(t)
+
+    def input_voltage(self, t: float) -> float:
+        """Get input voltage at time t"""
+        return self.voltage_func(t)
+
+    def vector_field(self, t, y, di_ref_dt: float=0):
+        """
+        Define the system dynamics as a vector field with variable resistance and adaptive PID
+
+        State vector y = [i, integral_error]
+        where:
+        - i: current
+        - integral_error: integral of error for PID
+        """
+        i, integral_error = y
+        
+        # Get parameters
+        R_current = self.get_resistance(i)
+        i_ref = self.reference_current(t)
+        # di_ref_dt = self.reference_current_derivative
+        Kp, Ki, Kd = self.get_pid_parameters(i_ref)
+        
+        # Analytical di/dt
+        numerator = (-(R_current + Kp) * i + 
+                    Kp * i_ref + 
+                    Ki * integral_error + 
+                    Kd * di_ref_dt)
+        di_dt = numerator / (self.L + Kd)
+        
+        # Integral error evolution
+        error = i_ref - i
+        dintegral_dt = error
+        
+        return np.array([di_dt, dintegral_dt])
+    
+
+    def voltage_vector_field(self, t: float, y, u: float=None):
+        """
+        RL circuit ODE
+        """
+
+        i = y  # Current is a scalar now, not an array
+
+        # Get voltage from CSV data
+        if u is None:
+            u = self.input_voltage(t)
+
+        # Get current-dependent resistance
+        R_current = self.get_resistance(i)
+
+        # Circuit dynamics: L * di/dt = -R(i,T) * i + u
+        di_dt = (-R_current * i + u) / self.L
+
+        return di_dt
+
+    def print_configuration(self):
+        """Print circuit and PID controller configuration"""
+        print(f"\n=== {self.circuit_id} Configuration ===")
+        print(f"Circuit ID: {self.circuit_id}")
+        print(f"Inductance (L): {self.L} H")
+        print(f"Temperature: {self.temperature}°C")
+
+        if self.use_variable_resistance:
+            print("Using variable resistance from CSV")
+            # compute Resistance range for current range at given temperature
+            R_min = self.get_resistance(float(self.current_range.min()))
+            R_max = self.get_resistance(float(self.current_range.max()))
+            print(f"Resistance range: {R_min:.3f} to {R_max:.3f} Ω over current range")
+        else:
+            print(f"Constant resistance: {self.R_constant} Ω")
+
+        # Print PID controller configuration
+        if self.pid_controller:
+            self.pid_controller.print_summary()
+
+    def update_pid_controller(self, pid_controller: PIDController):
+        """Update the PID controller"""
+        self.pid_controller = pid_controller
+
+    def set_circuit_id(self, circuit_id: str):
+        """Update the circuit ID"""
+        old_id = self.circuit_id
+        self.circuit_id = circuit_id
+        print(f"Circuit ID changed from '{old_id}' to '{circuit_id}'")
+
+    def copy(self, new_circuit_id: str = None):
+        """Create a copy of this circuit with optionally different ID"""
+        if new_circuit_id is None:
+            import uuid
+
+            new_circuit_id = f"circuit_{str(uuid.uuid4())[:8]}"
+
+        # Create new circuit with same parameters
+        new_circuit = RLCircuitPID(
+            R=self.R_constant if not self.use_variable_resistance else 1.0,
+            L=self.L,
+            pid_controller=self.pid_controller,  # Share the same PID controller
+            temperature=self.temperature,
+            circuit_id=new_circuit_id,
+        )
+
+        # Copy resistance and reference functions if they exist
+        if self.use_variable_resistance:
+            new_circuit.resistance_func = self.resistance_func
+            new_circuit.current_range = self.current_range
+            new_circuit.temp_range = self.temp_range
+            new_circuit.R_grid = self.R_grid
+            new_circuit.use_variable_resistance = True
+
+        new_circuit.reference_func = self.reference_func
+        new_circuit.voltage_func = self.voltage_func
+        new_circuit.use_csv_data = self.use_csv_data
+
+        if hasattr(self, "time_data"):
+            new_circuit.time_data = self.time_data
+        if hasattr(self, "current_data"):
+            new_circuit.current_data = self.current_data
+        if hasattr(self, "voltage_data"):
+            new_circuit.voltage_data = self.voltage_data
+
+        return new_circuit
+
+    def __repr__(self):
+        """String representation of the circuit"""
+        return f"RLCircuitPID(id='{self.circuit_id}', L={self.L}, R={'variable' if self.use_variable_resistance else self.R_constant}, T={self.temperature}°C)"
