@@ -1,0 +1,529 @@
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from typing import Dict, Tuple
+
+from .coupled_circuits import CoupledRLCircuitsPID
+
+def exp_metrics(t, exp_time, data, exp_data):
+    # Calculate and display comparison metrics if time ranges overlap
+    t_min = max(float(t.min()), float(exp_time.min()))
+    t_max = min(float(t.max()), float(exp_time.max()))
+
+    if t_max > t_min:
+        # Interpolate both datasets to common time grid for comparison
+
+        common_time = np.linspace(t_min, t_max, 200)
+        computed_interp = np.interp(common_time, t, data)
+        exp_interp = np.interp(common_time, exp_time, exp_data)
+
+        # Calculate RMS difference and MAE
+        rms_diff = np.sqrt(np.mean((computed_interp - exp_interp) ** 2))
+        mae_diff = np.mean(np.abs(computed_interp - exp_interp))
+
+    return rms_diff, mae_diff
+
+def prepare_coupled_post(sol, coupled_system: CoupledRLCircuitsPID, mode: str="regular", experimental_data: Dict = None) -> Tuple[np.ndarray, Dict]:
+    """
+    Post-process results for coupled RL circuits
+
+    Returns data structures for plotting and analysis
+    """
+    t = sol.ts
+    n_circuits = coupled_system.n_circuits
+    circuit_ids = coupled_system.circuit_ids
+
+    # Reshape solution: (time_steps, n_circuits, 3)
+    if mode == "regular":
+        y_reshaped = sol.ys.reshape(len(t), n_circuits)
+    else:
+        y_reshaped = sol.ys.reshape(len(t), n_circuits, 2)
+
+    results = {}
+
+    for i, circuit_id in enumerate(circuit_ids):
+        # circuit = coupled_system.circuits[i]  # Access circuit directly from list
+
+        # Extract state variables for this circuit
+        if mode == "regular":
+            current = y_reshaped[:, i]
+            voltage = np.array([circuit.voltage_func(t) for circuit in coupled_system.circuits])
+
+            if experimental_data and circuit_id in experimental_data:
+                exp_data = experimental_data[circuit_id]
+                exp_time = exp_data["time"]
+                exp_current = exp_data["current"]
+                rms_diff, mae_diff = exp_metrics(t, exp_time, current, exp_current)
+                print(f"Comparison metrics for {circuit_id}: RMS Difference = {rms_diff:.4f} A, MAE = {mae_diff:.4f} A")    
+        else:
+            current = y_reshaped[:, i, 0]
+            integral_error = y_reshaped[:, i, 1]
+
+            # Calculate reference current
+            i_ref = np.array(
+                [coupled_system.get_reference_current(i, t_val) for t_val in t]
+            )
+
+            # Calculate adaptive PID gains over time
+            Kp_over_time = []
+            Ki_over_time = []
+            Kd_over_time = []
+            current_regions = []
+
+            for j, i_ref_val in enumerate(i_ref):
+                i_ref_float = float(i_ref_val)
+                Kp, Ki, Kd = coupled_system.get_pid_parameters(i, i_ref_float)
+                Kp_over_time.append(float(Kp))
+                Ki_over_time.append(float(Ki))
+                Kd_over_time.append(float(Kd))
+
+                region_name = coupled_system.get_current_region(i, i_ref_float)
+                current_regions.append(region_name)
+
+
+            # Calculate control signals and errors
+            error = i_ref - current
+            derivative_error = np.gradient(error, t[1] - t[0])
+
+            Kp_array = np.array(Kp_over_time)
+            Ki_array = np.array(Ki_over_time)
+            Kd_array = np.array(Kd_over_time)
+
+            voltage = (
+                Kp_array * error + Ki_array * integral_error + Kd_array * derivative_error
+            )
+
+            if experimental_data and circuit_id in experimental_data:
+                exp_data = pd.read_csv(experimental_data[circuit_id])
+                exp_time = exp_data["time"]
+                exp_values = exp_data["voltage"]
+                rms_diff, mae_diff = exp_metrics(t, exp_time, voltage, exp_values)
+                print(f"Comparison metrics for {circuit_id}: RMS Difference = {rms_diff:.4f} V, MAE = {mae_diff:.4f} V")
+
+        # Calculate variable resistance over time
+        resistance_over_time = np.array(
+            [coupled_system.get_resistance(i, float(curr)) for curr in current]
+        )
+
+        # Calculate power dissipation
+        power = resistance_over_time * current**2
+
+        # Store results for this circuit
+        results[circuit_id] = {
+            "current": current,
+            "reference": i_ref,
+            "error": error,
+            "voltage": voltage,
+            "power": power,
+            "resistance": resistance_over_time,
+            "Kp": Kp_array,
+            "Ki": Ki_array,
+            "Kd": Kd_array,
+            "regions": current_regions,
+            "integral_error": integral_error,
+            "rms_diff": rms_diff if experimental_data and circuit_id in experimental_data else None,
+            "mae_diff": mae_diff if experimental_data and circuit_id in experimental_data else None,
+        }
+
+    return t, results
+
+
+def plot_coupled_vresults(
+    sol,
+    coupled_system: CoupledRLCircuitsPID,
+    t: np.ndarray,
+    results: Dict,
+    experimental_data: Dict = None,
+    save_path: str = None,
+    show: bool = True,
+):
+    """
+    Plot comprehensive results for coupled RL circuits with regular ODE
+    """
+    n_circuits = coupled_system.n_circuits
+    circuit_ids = coupled_system.circuit_ids
+
+    # Set up color palette
+    colors = plt.cm.Set1(np.linspace(0, 1, n_circuits))
+
+    # Create figure with subplots
+    fig, axes = plt.subplots(4, 2, figsize=(16, 20), sharex=True)
+    axes = axes.flatten()
+
+    # 1. Current tracking for all circuits
+    ax = axes[0]
+    for i, circuit_id in enumerate(circuit_ids):
+        data = results[circuit_id]
+        ax.plot(
+            t,
+            data["current"],
+            color=colors[i],
+            linewidth=2,
+            label=f"{circuit_id} - Actual",
+            linestyle="-",
+        )
+        if circuit_id in experimental_data:
+            exp_data = pd.read_csv(experimental_data[circuit_id])
+            exp_time = exp_data["time"]
+            exp_current = exp_data["current"]
+            ax.plot(
+                exp_time,
+                exp_current,
+                color=colors[i],
+                linewidth=1,
+                label=f"{circuit_id} - Experimental",
+                linestyle=":",
+                alpha=0.7,
+            )
+            
+            # Add comparison metrics to the plot
+            ax.text(
+                0.02,
+                0.98,
+                f"{circuit_id} RMS Diff: {data['rms_diff']:.2f} V\n{circuit_id} MAE Diff: {data['mae_diff']:.2f} V",
+                transform=ax.transAxes,
+                verticalalignment="top",
+                bbox=dict(boxstyle="round,pad=0.3", facecolor="wheat", alpha=0.8),
+            )
+
+    # ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Current (A)")
+    ax.set_title("Current - All Circuits")
+    ax.grid(True, alpha=0.3)
+    ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+
+    # 2. Voltage 
+    ax = axes[1]
+    for i, circuit_id in enumerate(circuit_ids):
+        data = results[circuit_id]
+        ax.plot(t, data["voltage"], color=colors[i], linewidth=2, label=circuit_id)
+
+    # ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Voltage (V)")
+    ax.set_title("Voltage - All cicuits")
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+
+    # 3. Variable resistance
+    ax = axes[2]
+    for i, circuit_id in enumerate(circuit_ids):
+        data = results[circuit_id]
+        circuit = coupled_system.circuits[circuit_id]
+        label = f'{circuit_id} (T={circuit["temperature"]}°C)'
+        ax.plot(t, data["resistance"], color=colors[i], linewidth=2, label=label)
+
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Resistance (Ω)")
+    ax.set_title("Circuit Resistances")
+    ax.grid(True, alpha=0.3)
+    ax.legend() 
+
+    # # 4. Power dissipation
+    ax = axes[3]
+    for i, circuit_id in enumerate(circuit_ids):
+        data = results[circuit_id]
+        ax.plot(t, data["power"], color=colors[i], linewidth=2, label=circuit_id)
+
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Power (W)")
+    ax.set_title(" Dissipation P = R(I,T) × I² - All circuits")
+    ax.grid(True, alpha=0.3)
+    ax.legend() 
+    
+
+    plt.tight_layout()
+    if show:
+        plt.show()
+    if save_path:
+        fig.savefig(save_path, dpi=300)
+        print(f"Plots saved to {save_path}")
+    plt.close(fig)
+
+
+def plot_coupled_results(
+    sol,
+    coupled_system: CoupledRLCircuitsPID,
+    t: np.ndarray,
+    results: Dict,
+    experimental_data: Dict = None,
+    save_path: str = None,
+    show: bool = True,
+):
+    """
+    Plot comprehensive results for coupled RL circuits
+    """
+    n_circuits = coupled_system.n_circuits
+    circuit_ids = coupled_system.circuit_ids
+
+    # Set up color palette
+    colors = plt.cm.Set1(np.linspace(0, 1, n_circuits))
+
+    # Create figure with subplots
+    fig, axes = plt.subplots(6, 2, figsize=(16, 20), sharex=True)
+    axes = axes.flatten()
+
+    # 1. Current tracking for all circuits
+    ax = axes[0]
+    for i, circuit_id in enumerate(circuit_ids):
+        data = results[circuit_id]
+        ax.plot(
+            t,
+            data["current"],
+            color=colors[i],
+            linewidth=2,
+            label=f"{circuit_id} - Actual",
+            linestyle="-",
+        )
+        ax.plot(
+            t,
+            data["reference"],
+            color=colors[i],
+            linewidth=2,
+            label=f"{circuit_id} - Reference",
+            linestyle="--",
+            alpha=0.7,
+        )
+
+    # ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Current (A)")
+    ax.set_title("Current Tracking - All Circuits")
+    ax.grid(True, alpha=0.3)
+    ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+
+    # 2. PID Gains
+    ax = axes[1]
+    for i, circuit_id in enumerate(circuit_ids):
+        data = results[circuit_id]
+        ax.plot(t, data["Kp"], "g-", label=f"{circuit_id} Kp", linewidth=2)
+        ax.plot(t, data["Ki"], "b-", label=f"{circuit_id} Ki", linewidth=2)
+        ax.plot(t, data["Kd"] * 100, "r-", label=f"{circuit_id} Kd × 100", linewidth=2)  # Scale Kd for visibility
+    
+    # axes[1].set_xlabel("Time (s)")
+    ax.set_ylabel("PID Gains")
+    ax.set_title("Adaptive PID Parameters")
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+
+    # 3. voltages
+    ax = axes[2]
+    for i, circuit_id in enumerate(circuit_ids):
+        data = results[circuit_id]
+        ax.plot(t, data["voltage"], color=colors[i], linewidth=2, label=circuit_id)
+        if circuit_id in experimental_data:
+            exp_data = pd.read_csv(experimental_data[circuit_id])
+            exp_time = exp_data["time"]
+            exp_current = exp_data["voltage"]
+            ax.plot(
+                exp_time,
+                exp_current,
+                color=colors[i],
+                linewidth=1,
+                label=f"{circuit_id} - Experimental",
+                linestyle=":",
+                alpha=0.7,
+            )
+
+    # ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Voltage (V)")
+    ax.set_title("Control Voltages")
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+
+    # 4. Variable resistance
+    ax = axes[3]
+    for i, circuit_id in enumerate(circuit_ids):
+        data = results[circuit_id]
+        circuit = coupled_system.circuits[circuit_id]
+        label = f'{circuit_id} (T={circuit["temperature"]}°C)'
+        ax.plot(t, data["resistance"], color=colors[i], linewidth=2, label=label)
+
+    # ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Resistance (Ω)")
+    ax.set_title("Circuit Resistances")
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+
+    # 5. Power dissipation
+    ax = axes[4]
+    for i, circuit_id in enumerate(circuit_ids):
+        data = results[circuit_id]
+        ax.plot(t, data["power"], color=colors[i], linewidth=2, label=circuit_id)
+
+    # ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Power (W)")
+    ax.set_title("Power Dissipation")
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+
+    # 6. Tracking errors
+    ax = axes[5]
+    for i, circuit_id in enumerate(circuit_ids):
+        data = results[circuit_id]
+        ax.plot(t, data["error"], color=colors[i], linewidth=2, label=circuit_id)
+
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Error (A)")
+    ax.set_title("Tracking Errors")
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+
+
+    plt.tight_layout()
+    if show:
+        plt.show()
+    if save_path:
+        fig.savefig(save_path, dpi=300)
+        print(f"Plots saved to {save_path}")
+    plt.close(fig)
+
+
+
+
+
+def analyze_coupling_effects(
+    coupled_system: CoupledRLCircuitsPID, t: np.ndarray, results: Dict
+):
+    """
+    Provide detailed numerical analysis of coupling effects
+    """
+    n_circuits = coupled_system.n_circuits
+    circuit_ids = coupled_system.circuit_ids
+
+    print("\n=== Coupling Effects Analysis ===")
+
+    # Current statistics
+    print("\nCurrent Statistics:")
+    for circuit_id in circuit_ids:
+        data = results[circuit_id]
+        current = data["current"]
+        print(f"  {circuit_id}:")
+        print(f"    Max current: {float(np.max(np.abs(current))):.3f} A")
+        print(f"    RMS current: {float(np.sqrt(np.mean(current**2))):.3f} A")
+        print(f"    Current variation (std): {float(np.std(current)):.3f} A")
+
+    # Cross-correlation analysis
+    print("\nCross-Correlation Analysis:")
+    current_matrix = np.array([results[cid]["current"] for cid in circuit_ids])
+    correlation_matrix = np.corrcoef(current_matrix)
+
+    for i, circuit_i in enumerate(circuit_ids):
+        for j, circuit_j in enumerate(circuit_ids):
+            if i < j:  # Only upper triangle
+                corr = correlation_matrix[i, j]
+                coupling_strength = coupled_system.M[i, j]
+                print(f"  {circuit_i} ↔ {circuit_j}:")
+                print(f"    Mutual inductance: {coupling_strength:.4f} H")
+                print(f"    Current correlation: {corr:.3f}")
+
+    # Error analysis
+    print("\nTracking Performance:")
+    for circuit_id in circuit_ids:
+        data = results[circuit_id]
+        error = data["error"]
+        rms_error = float(np.sqrt(np.mean(error**2)))
+        max_error = float(np.max(np.abs(error)))
+        print(f"  {circuit_id}:")
+        print(f"    RMS error: {rms_error:.4f} A")
+        print(f"    Max error: {max_error:.4f} A")
+
+    # PID region usage
+    print("\nPID Region Usage:")
+    for circuit_id in circuit_ids:
+        data = results[circuit_id]
+        regions = data["regions"]
+        unique_regions, counts = np.unique(regions, return_counts=True)
+        total_time = len(regions) * (t[1] - t[0])
+
+        print(f"  {circuit_id}:")
+        for region, count in zip(unique_regions, counts):
+            time_percent = (count / len(regions)) * 100
+            print(f"    {region} region: {time_percent:.1f}% of time")
+
+    # Energy analysis
+    print("\nEnergy Analysis:")
+    total_energy_dissipated = 0.0
+    max_instantaneous_power = 0.0
+
+    for circuit_id in circuit_ids:
+        data = results[circuit_id]
+        power = data["power"]
+        energy_dissipated = float(np.sum(power) * (t[1] - t[0]))
+        max_power = float(np.max(power))
+
+        total_energy_dissipated += energy_dissipated
+        max_instantaneous_power = max(max_instantaneous_power, max_power)
+
+        print(f"  {circuit_id}:")
+        print(f"    Energy dissipated: {energy_dissipated:.3f} J")
+        print(f"    Max power: {max_power:.3f} W")
+
+    print(f"  Total system energy dissipated: {total_energy_dissipated:.3f} J")
+    print(f"  Max instantaneous power (any circuit): {max_instantaneous_power:.3f} W")
+
+
+
+
+def save_coupled_results(
+    coupled_system: CoupledRLCircuitsPID,
+    t: np.ndarray,
+    results: Dict,
+    filename: str = "coupled_simulation_results.npz",
+):
+    """
+    Save simulation results to a file for later analysis
+    """
+    # Prepare data for saving
+    save_data = {
+        "time": t,
+        "n_circuits": coupled_system.n_circuits,
+        "circuit_ids": coupled_system.circuit_ids,
+        "mutual_inductances": coupled_system.M,
+    }
+
+    # Add results for each circuit
+    for circuit_id in coupled_system.circuit_ids:
+        data = results[circuit_id]
+        save_data[f"{circuit_id}_current"] = data["current"]
+        save_data[f"{circuit_id}_reference"] = data["reference"]
+        save_data[f"{circuit_id}_error"] = data["error"]
+        save_data[f"{circuit_id}_voltage"] = data["voltage"]
+        save_data[f"{circuit_id}_power"] = data["power"]
+        save_data[f"{circuit_id}_resistance"] = data["resistance"]
+        save_data[f"{circuit_id}_Kp"] = data["Kp"]
+        save_data[f"{circuit_id}_Ki"] = data["Ki"]
+        save_data[f"{circuit_id}_Kd"] = data["Kd"]
+
+    # Save to file
+    np.savez_compressed(filename, **save_data)
+    print(f"Results saved to {filename}")
+
+
+def load_coupled_results(
+    filename: str = "coupled_simulation_results.npz",
+) -> Tuple[np.ndarray, Dict]:
+    """
+    Load previously saved simulation results
+    """
+    data = np.load(filename)
+
+    t = data["time"]
+    n_circuits = int(data["n_circuits"])
+    circuit_ids = list(data["circuit_ids"])
+
+    results = {}
+    for circuit_id in circuit_ids:
+        results[circuit_id] = {
+            "current": data[f"{circuit_id}_current"],
+            "reference": data[f"{circuit_id}_reference"],
+            "error": data[f"{circuit_id}_error"],
+            "voltage": data[f"{circuit_id}_voltage"],
+            "power": data[f"{circuit_id}_power"],
+            "resistance": data[f"{circuit_id}_resistance"],
+            "Kp": data[f"{circuit_id}_Kp"],
+            "Ki": data[f"{circuit_id}_Ki"],
+            "Kd": data[f"{circuit_id}_Kd"],
+        }
+
+    print(f"Results loaded from {filename}")
+    return t, results

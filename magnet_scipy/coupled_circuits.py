@@ -1,0 +1,328 @@
+import numpy as np
+from typing import List, Tuple
+
+from .rlcircuitpid import RLCircuitPID
+
+
+class CoupledRLCircuitsPID:
+    """
+    Multiple RL Circuits with Magnetic Coupling and Independent PID Controllers
+
+    Each circuit is electrically independent but magnetically coupled through
+    mutual inductances. Uses RLCircuitPID instances directly for maximum flexibility.
+    """
+
+    def __init__(
+        self,
+        circuits: List[RLCircuitPID],  # List of RLCircuitPID instances
+        mutual_inductances: np.ndarray = None,
+    ):
+        """
+        Initialize coupled RL circuits
+
+        Args:
+            circuits: List of RLCircuitPID instances
+            mutual_inductances: NxN matrix of mutual inductances M[i,j] between circuits i and j
+                               If None, creates symmetric coupling matrix
+         """
+        self.circuits = circuits
+        self.n_circuits = len(circuits)
+
+        if self.n_circuits < 2:
+            raise ValueError("Need at least 2 circuits for coupling")
+
+        # Validate that all circuits have circuit_id
+        self.circuit_ids = []
+        for i, circuit in enumerate(self.circuits):
+            if not hasattr(circuit, "circuit_id") or circuit.circuit_id is None:
+                raise ValueError(f"Circuit {i} must have a circuit_id")
+            self.circuit_ids.append(circuit.circuit_id)
+
+        # Check for duplicate circuit IDs
+        if len(set(self.circuit_ids)) != len(self.circuit_ids):
+            raise ValueError("All circuits must have unique circuit_id values")
+
+        # Initialize mutual inductance matrix
+        if mutual_inductances is not None:
+            if mutual_inductances.shape != (self.n_circuits, self.n_circuits):
+                raise ValueError(
+                    f"Mutual inductance matrix must be {self.n_circuits}x{self.n_circuits}"
+                )
+            
+            # create a symetric 2d numpy array from mutual_inductances
+            L_values = [circuit.L for circuit in self.circuits] 
+            self.M = np.zeros(self.n_circuits, self.n_circuits)
+            np.fill_diagonal(self.M, L_values)
+            M = np.array(mutual_inductances)
+            triu_indices = np.triu_indices(self.n_circuits, k=1)
+            self.M[triu_indices] = M[triu_indices]
+            self.M = self.M + self.M.T - np.diag(np.diag(self.M))  # Make symmetric
+        else:
+            raise RuntimeError("mutal_inductances undefined")
+
+        # Validate mutual inductance matrix
+        self._validate_coupling_matrix()
+
+        # Pid Controller params
+         
+        print(f"Initialized {self.n_circuits} coupled RL circuits")
+        print(f"Circuit IDs: {self.circuit_ids}")
+
+    def _validate_coupling_matrix(self):
+        """Validate the mutual inductance matrix"""
+        # Check symmetry
+        if not np.allclose(self.M, self.M.T):
+            print("Warning: Mutual inductance matrix is not symmetric")
+
+        # Check diagonal is zero
+        if not np.allclose(np.diag(self.M), 0.0):
+            print("Warning: Mutual inductance matrix has non-zero diagonal elements")
+
+    def get_resistance(self, circuit_idx: int, current: float) -> float:
+        """Get resistance for a specific circuit"""
+        circuit = self.circuits[circuit_idx]
+        return circuit.get_resistance(current)
+
+    def get_reference_current(self, circuit_idx: int, t: float) -> float:
+        """Get reference current for a specific circuit"""
+        circuit = self.circuits[circuit_idx]
+        return circuit.reference_current(t)
+
+    def get_pid_parameters(
+        self, circuit_idx: int, i_ref: float
+    ) -> Tuple[float, float, float]:
+        """Get PID parameters for a specific circuit"""
+        circuit = self.circuits[circuit_idx]
+        return circuit.get_pid_parameters(i_ref)
+
+    def get_pid_params(self, i_ref: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Get PID parameters for all circuits"""
+        Kp = np.zeros((self.n_circuits, self.n_circuits))
+        Ki = np.zeros((self.n_circuits, self.n_circuits))
+        Kd = np.zeros((self.n_circuits, self.n_circuits))
+        for n, circuit in enumerate(self.circuits):
+            kp, ki, kd = circuit.get_pid_parameters(i_ref[n])
+            Kp[n, n] = kp
+            Ki[n, n] = ki
+            Kd[n, n] = kd
+        return Kp, Ki, Kd
+    
+    def get_current_region(self, circuit_idx: int, i_ref: float) -> str:
+        """Get current region name for a specific circuit"""
+        circuit = self.circuits[circuit_idx]
+        return circuit.get_current_region(i_ref)
+    
+    def voltage_vector_field(self, t: float, y, u: np.ndarray = None):
+        """
+        RL circuit ODE
+        """
+
+        i = y  # Current is an array of ncircuit dimension
+
+        # Get voltage from CSV data
+        if u is None:
+            u = np.array([circuit.input_voltage(t) for circuit in self.circuits])
+
+        # Get current-dependent resistance
+        R_current = np.array([circuit.get_resistance(i[n]) for n,circuit in enumerate(self.circuits)]) 
+        
+        net_voltages = u - R_current * i  # Net voltages after resistive drop
+        try:
+            di_dt = np.linalg.solve(self.M, net_voltages)      
+        except np.linalg.LinAlgError as e:
+            raise RuntimeError(f"Singular inductance matrix: {e}")
+        return di_dt
+
+    # TODO: by default make di_ref_dt: np.ndarray of dimensions ncircuits with zeros
+    def vector_field(self, t: float, y: np.ndarray, di_ref_dt: np.ndarray = None) -> np.ndarray:
+        """
+        Define the system dynamics as a vector field with variable resistance and adaptive PID
+
+        State vector y = [i, integral_error]
+        where:
+        - i: current
+        - integral_error: integral of error for PID
+        """
+        i, integral_error = y
+
+        # Get parameters
+        R_current = np.array([circuit.get_resistance(i[n]) for n, circuit in enumerate(self.circuits)])
+        i_ref = np.array([circuit.reference_current(t) for circuit in self.circuits])
+
+        Kp, Ki, Kd = self.get_pid_parameters(i_ref)
+        
+        # Analytical di/dt
+        numerator = (-(R_current + Kp) * i + 
+                    Kp * i_ref + 
+                    Ki * integral_error + 
+                    Kd * di_ref_dt)
+        
+        try:
+            di_dt = np.linalg.solve(self.M + Kd, numerator)      
+        except np.linalg.LinAlgError as e:
+            raise RuntimeError(f"Singular inductance matrix: {e}")  
+        
+        # Integral error evolution
+        error = i_ref - i
+        dintegral_dt = error
+        
+        return np.array([di_dt, dintegral_dt])
+
+    def get_initial_conditions(self) -> np.ndarray:
+        """Get initial conditions for all circuits"""
+        # Each circuit: [current, integral_error, prev_error]
+        y0 = np.zeros(self.n_circuits * 3)
+        return y0
+
+    def print_configuration(self):
+        """Print configuration of all circuits and coupling"""
+        print("\n=== Coupled RL Circuits Configuration ===")
+        print(f"Number of circuits: {self.n_circuits}")
+        print(f"Circuit IDs: {self.circuit_ids}")
+
+        print("\nMutual Inductance Matrix (H):")
+        for i in range(self.n_circuits):
+            row_str = "  "
+            for j in range(self.n_circuits):
+                row_str += f"{float(self.M[i,j]):8.4f} "
+            print(row_str)
+
+        print("\nIndividual Circuit Configurations:")
+        for i, circuit in enumerate(self.circuits):
+            print(f"\n  === {circuit.circuit_id} ===")
+            circuit.print_configuration()
+
+    def update_mutual_inductance(self, i: int, j: int, M_ij: float):
+        """Update a specific mutual inductance value"""
+        if i >= self.n_circuits or j >= self.n_circuits:
+            raise ValueError("Circuit indices out of range")
+
+        # Update symmetrically
+        self.M = self.M.at[i, j].set(M_ij)
+        self.M = self.M.at[j, i].set(M_ij)
+
+    def add_circuit(self, circuit) -> None:
+        """
+        Add a new circuit to the system (requires rebuilding coupling matrix)
+
+        Args:
+            circuit: RLCircuitPID instance to add
+        """
+        if not hasattr(circuit, "circuit_id") or circuit.circuit_id is None:
+            raise ValueError("Circuit must have a circuit_id")
+
+        if circuit.circuit_id in self.circuit_ids:
+            raise ValueError(f"Circuit ID '{circuit.circuit_id}' already exists")
+
+        self.circuits.append(circuit)
+        self.circuit_ids.append(circuit.circuit_id)
+        old_n_circuits = self.n_circuits
+        self.n_circuits += 1
+
+        # Rebuild mutual inductance matrix with default coupling to new circuit
+        old_M = self.M
+
+        # Create new matrix
+        new_M = np.zeros((self.n_circuits, self.n_circuits))
+
+        # Copy old matrix
+        new_M = new_M.at[:old_n_circuits, :old_n_circuits].set(old_M)
+
+        self.M = new_M
+        print(
+            f"Added circuit '{circuit.circuit_id}'"
+        )
+
+    def remove_circuit(self, circuit_id: str) -> None:
+        """
+        Remove a circuit from the system
+
+        Args:
+            circuit_id: ID of the circuit to remove
+        """
+        if circuit_id not in self.circuit_ids:
+            raise ValueError(f"Circuit ID '{circuit_id}' not found")
+
+        if self.n_circuits <= 2:
+            raise ValueError(
+                "Cannot remove circuit - need at least 2 circuits for coupling"
+            )
+
+        # Find index of circuit to remove
+        remove_idx = self.circuit_ids.index(circuit_id)
+
+        # Remove circuit from list
+        self.circuits.pop(remove_idx)
+        self.circuit_ids.remove(circuit_id)
+        self.n_circuits -= 1
+
+        # Rebuild mutual inductance matrix
+        indices_to_keep = [i for i in range(self.n_circuits + 1) if i != remove_idx]
+        new_M = self.M[np.ix_(indices_to_keep, indices_to_keep)]
+        self.M = new_M
+
+        print(f"Removed circuit '{circuit_id}'")
+
+    def get_circuit_names(self) -> List[str]:
+        """Get list of circuit IDs"""
+        return self.circuit_ids.copy()
+
+    def get_coupling_strength(self, i: int, j: int) -> float:
+        """Get mutual inductance between circuits i and j"""
+        if i >= self.n_circuits or j >= self.n_circuits:
+            raise ValueError("Circuit indices out of range")
+        return float(self.M[i, j])
+
+    def get_circuit_by_id(self, circuit_id: str):
+        """Get a circuit by its ID"""
+        for circuit in self.circuits:
+            if circuit.circuit_id == circuit_id:
+                return circuit
+        raise ValueError(f"Circuit ID '{circuit_id}' not found")
+
+    def get_circuit_by_index(self, index: int):
+        """Get a circuit by its index"""
+        if 0 <= index < self.n_circuits:
+            return self.circuits[index]
+        raise ValueError(f"Circuit index {index} out of range [0, {self.n_circuits-1}]")
+
+    def get_circuit_index(self, circuit_id: str) -> int:
+        """Get the index of a circuit by its ID"""
+        try:
+            return self.circuit_ids.index(circuit_id)
+        except ValueError:
+            raise ValueError(f"Circuit ID '{circuit_id}' not found")
+
+    def set_coupling_matrix(self, mutual_inductances: np.ndarray):
+        """Set the entire mutual inductance matrix"""
+        if mutual_inductances.shape != (self.n_circuits, self.n_circuits):
+            raise ValueError(
+                f"Mutual inductance matrix must be {self.n_circuits}x{self.n_circuits}"
+            )
+
+        self.M = np.array(mutual_inductances)
+        self._validate_coupling_matrix()
+        print("Updated mutual inductance matrix")
+
+    def get_coupling_matrix(self) -> np.ndarray:
+        """Get the current mutual inductance matrix"""
+        return np.array(self.M)
+
+    def __len__(self) -> int:
+        """Return the number of circuits"""
+        return self.n_circuits
+
+    def __getitem__(self, key):
+        """Allow indexing circuits by index or ID"""
+        if isinstance(key, int):
+            return self.get_circuit_by_index(key)
+        elif isinstance(key, str):
+            return self.get_circuit_by_id(key)
+        else:
+            raise TypeError("Key must be int (index) or str (circuit_id)")
+
+    def __repr__(self) -> str:
+        """String representation of the coupled system"""
+        return f"CoupledRLCircuitsPID(n_circuits={self.n_circuits}, ids={self.circuit_ids})"
+
+
