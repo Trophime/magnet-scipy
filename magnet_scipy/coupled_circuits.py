@@ -221,8 +221,9 @@ class CoupledRLCircuitsPID:
 
         print("\nIndividual Circuit Configurations:")
         for i, circuit in enumerate(self.circuits):
-            print(f"\n  === {circuit.circuit_id} ===")
             circuit.print_configuration()
+
+        print("\n=== Coupled RL Circuits Configuration loaded ===")
 
     def update_mutual_inductance(self, i: int, j: int, M_ij: float):
         """Update a specific mutual inductance value"""

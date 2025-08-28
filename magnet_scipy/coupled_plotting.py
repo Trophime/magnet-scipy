@@ -135,15 +135,14 @@ def prepare_coupled_post(
         if circuit.use_variable_temperature:
             resistance_over_time = np.array(
                 [
-                    circuit.get_resistance(i, float(curr), float(temp))
+                    circuit.get_resistance(float(curr), float(temp))
                     for curr, temp in zip(current, temperature_over_time)
                 ]
             )
         else:
             resistance_over_time = np.array(
-                [circuit.get_resistance(i, float(curr)) for curr in current]
+                [circuit.get_resistance(float(curr)) for curr in current]
             )
-        print("R stats: ", stats.describe(resistance_over_time))
 
         # Calculate power dissipation
         power = resistance_over_time * current**2
@@ -173,6 +172,14 @@ def prepare_coupled_post(
                 else None
             ),
         }
+
+        print(circuit_id)
+        print("current stats: ", stats.describe(current))
+        print("voltage stats: ", stats.describe(voltage))
+        if temperature_over_time is not None:
+            print("T stats: ", stats.describe(temperature_over_time))
+        print("R stats: ", stats.describe(resistance_over_time))
+        print("Power stats: ", stats.describe(power))
 
     return t, results
 
@@ -256,17 +263,24 @@ def plot_coupled_vresults(
     # 3. Variable resistance
     ax = axes[2]
     # Adding Twin Axes to plot using temperature - if not constant
-    ax2 = ax.twinx()
+    use_variable_temperature = (
+        True
+        if all(circuit.use_variable_temperature for circuit in coupled_system)
+        else False
+    )
+    if use_variable_temperature:
+        ax2 = ax.twinx()
+
     for i, circuit_id in enumerate(circuit_ids):
         data = results[circuit_id]
-        if "temperature" in data and data["temperature"] is not None:
+        if use_variable_temperature:
             label = f"{circuit_id}"  # change label if temp is contant
         else:
             label = f"{circuit_id} Tin={coupled_system.circuits[i].temperature}°C"
         ax.plot(t, data["resistance"], color=colors[i], linewidth=2, label=label)
 
         # TODO add temperature if available in right yaxis - if not constant
-        if "temperature" in data and data["temperature"] is not None:
+        if use_variable_temperature:
             label = f"{circuit_id} Tin"
             ax2.plot(
                 t,
@@ -281,10 +295,11 @@ def plot_coupled_vresults(
             )
 
     # if there is at least a circuit with a non constant temperature
-    ax2.set_ylabel("Tin (°C)")
-    ax2.tick_params(axis="y")
-    ax2.grid(False)
-    # ax2.legend()
+    if use_variable_temperature:
+        ax2.set_ylabel("Tin (°C)")
+        ax2.tick_params(axis="y")
+        ax2.grid(False)
+        # ax2.legend()
 
     # ax.set_xlabel("Time (s)")
     ax.set_ylabel("Resistance (Ω)")
