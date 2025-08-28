@@ -90,7 +90,7 @@ def plot_results(
 
     # Create comprehensive plots
     fig, axes = plt.subplots(6, 1, figsize=(14, 20), sharex=True)
-          
+
     # Current tracking with regions highlighted
     axes[0].plot(t, current, "b-", label="Actual Current", linewidth=2)
     axes[0].plot(t, i_ref, "r--", label="Reference Current", linewidth=2)
@@ -231,7 +231,6 @@ def plot_results(
     axes[5].grid(True, alpha=0.3)
     axes[5].legend()
 
-
     plt.tight_layout()
     plt.show()
 
@@ -244,25 +243,25 @@ def plot_vresults(
     """Plot the simulation results including adaptive PID behavior and optional experimental data"""
     t = sol.t
     current = sol.y.squeeze()
-    
+
     voltage = circuit.voltage_func(t)
-    
+
     # Calculate variable resistance over time
     # if circuit.use_variable_resistance:
     if circuit.use_variable_resistance:
         resistance_over_time = circuit.get_resistance(current)
     else:
         resistance_over_time = np.full_like(current, circuit.R_constant)
-    
+
     # Calculate power dissipation
     power = resistance_over_time * current**2
-    
+
     # Create comprehensive plots
     fig, axes = plt.subplots(4, 1, figsize=(14, 20), sharex=True)
-    
+
     # Current tracking with regions highlighted
     axes[0].plot(t, current, "b-", label="Actual Current", linewidth=2)
-    
+
     # Add experimental data if available
     if experimental_data is not None:
         exp_time = experimental_data["time"].to_numpy()
@@ -278,15 +277,40 @@ def plot_vresults(
             linewidth=1,
         )
 
+        # Calculate and display comparison metrics if time ranges overlap
+        t_min = max(float(t.min()), float(exp_time.min()))
+        t_max = min(float(t.max()), float(exp_time.max()))
+
+        if t_max > t_min:
+            # Interpolate both datasets to common time grid for comparison
+
+            common_time = np.linspace(t_min, t_max, 200)
+            computed_interp = np.interp(common_time, t, current)
+            exp_interp = np.interp(common_time, exp_time, exp_current)
+
+            # Calculate RMS difference and MAE
+            rms_diff = np.sqrt(np.mean((computed_interp - exp_interp) ** 2))
+            mae_diff = np.mean(np.abs(computed_interp - exp_interp))
+
+            # Add comparison metrics to the plot
+            axes[2].text(
+                0.02,
+                0.02,
+                f"RMS Diff: {rms_diff:.2f} A\nMAE Diff: {mae_diff:.2f} A",
+                transform=axes[2].transAxes,
+                verticalalignment="top",
+                bbox=dict(boxstyle="round,pad=0.3", facecolor="wheat", alpha=0.8),
+            )
+
         axes[0].set_title("Current: Computed vs Experimental")
     else:
         axes[0].set_title("Current")
-    
+
     # axes[0].set_xlabel("Time (s)")
     axes[0].set_ylabel("Current (A)")
     axes[0].grid(True, alpha=0.3)
     axes[0].legend()
-    
+
     # Control voltage with optional experimental comparison
     axes[1].plot(t, voltage, "purple", label="Input Voltage", linewidth=2)
 
@@ -294,7 +318,7 @@ def plot_vresults(
     axes[1].set_ylabel("Voltage (V)")
     axes[1].grid(True, alpha=0.3)
     axes[1].legend()
-    
+
     # Variable resistance
     axes[2].plot(
         t,
@@ -311,7 +335,7 @@ def plot_vresults(
         axes[2].set_title("Constant Resistance")
     axes[2].grid(True, alpha=0.3)
     axes[2].legend()
-    
+
     # Power dissipation
     axes[3].plot(t, power, "orange", label="Power Dissipation", linewidth=2)
     axes[3].set_xlabel("Time (s)")
@@ -319,16 +343,22 @@ def plot_vresults(
     axes[3].set_title("Power Dissipation P = R(I,T) × I²")
     axes[3].grid(True, alpha=0.3)
     axes[3].legend()
-    
+
     plt.tight_layout()
     plt.show()
 
-def plot_global(t_global, sol_global, circuit, experimental_data=None,):
-    current = sol_global[0]
-    integral_error = sol_global[1]
-    
+
+def plot_global(
+    t,
+    sol,
+    circuit,
+    experimental_data=None,
+):
+    current = sol[0]
+    integral_error = sol[1]
+
     # Vectorized evaluation
-    i_ref = circuit.reference_func(t_global)
+    i_ref = circuit.reference_func(t)
     print("get i_ref", i_ref.shape, type(i_ref))
 
     # Calculate adaptive PID gains over time
@@ -336,7 +366,7 @@ def plot_global(t_global, sol_global, circuit, experimental_data=None,):
     Ki_over_time = []
     Kd_over_time = []
     current_regions = []
-    
+
     # for post-processing
     for i, i_ref_val in enumerate(i_ref):
         # Convert to Python float for region name lookup
@@ -361,7 +391,7 @@ def plot_global(t_global, sol_global, circuit, experimental_data=None,):
 
     # Calculate control voltage with adaptive gains
     error = i_ref - current
-    derivative_error = np.gradient(error, t_global[1] - t_global[0])
+    derivative_error = np.gradient(error, t[1] - t[0])
     voltage = (
         Kp_over_time * error
         + Ki_over_time * integral_error
@@ -373,11 +403,11 @@ def plot_global(t_global, sol_global, circuit, experimental_data=None,):
 
     # Create comprehensive plots
     fig, axes = plt.subplots(6, 1, figsize=(14, 20), sharex=True)
-    print('create subplots', flush=True)
-          
+    print("create subplots", flush=True)
+
     # Current tracking with regions highlighted
-    axes[0].plot(t_global, current, "b-", label="Actual Current", linewidth=2)
-    axes[0].plot(t_global, i_ref, "r--", label="Reference Current", linewidth=2)
+    axes[0].plot(t, current, "b-", label="Actual Current", linewidth=2)
+    axes[0].plot(t, i_ref, "r--", label="Reference Current", linewidth=2)
 
     # Color background by current region
     prev_region = None
@@ -394,12 +424,12 @@ def plot_global(t_global, sol_global, circuit, experimental_data=None,):
         current_regions[::100]
     ):  # Sample every 100 points for performance
         if region != prev_region:
-            region_start = t_global[i * 100] if i * 100 < len(t_global) else t_global[-1]
+            region_start = t[i * 100] if i * 100 < len(t) else t[-1]
             # Find next region change
-            region_end = t_global[-1]
+            region_end = t[-1]
             for j in range(i + 1, len(current_regions[::100])):
-                if current_regions[j * 100] != region and j * 100 < len(t_global):
-                    region_end = t_global[j * 100]
+                if current_regions[j * 100] != region and j * 100 < len(t):
+                    region_end = t[j * 100]
                     break
 
             color_key = region.lower() if region.lower() in region_colors else region
@@ -417,22 +447,22 @@ def plot_global(t_global, sol_global, circuit, experimental_data=None,):
     axes[0].set_title("Current Tracking Performance with Adaptive PID Regions")
     axes[0].grid(True, alpha=0.3)
     axes[0].legend()
-    print('subplot current', flush=True)
+    print("subplot current", flush=True)
     # Adaptive PID gains
-    axes[1].plot(t_global, Kp_over_time, "g-", label="Kp", linewidth=2)
-    axes[1].plot(t_global, Ki_over_time, "b-", label="Ki", linewidth=2)
+    axes[1].plot(t, Kp_over_time, "g-", label="Kp", linewidth=2)
+    axes[1].plot(t, Ki_over_time, "b-", label="Ki", linewidth=2)
     axes[1].plot(
-        t_global, Kd_over_time * 100, "r-", label="Kd × 100", linewidth=2
+        t, Kd_over_time * 100, "r-", label="Kd × 100", linewidth=2
     )  # Scale Kd for visibility
     # axes[1].set_xlabel("Time (s)")
     axes[1].set_ylabel("PID Gains")
     axes[1].set_title("Adaptive PID Parameters")
     axes[1].grid(True, alpha=0.3)
     axes[1].legend()
-    print('subplot pid')
+    print("subplot pid")
 
     # Control voltage with optional experimental comparison
-    axes[2].plot(t_global, voltage, "purple", label="Computed Control Voltage", linewidth=2)
+    axes[2].plot(t, voltage, "purple", label="Computed Control Voltage", linewidth=2)
 
     # Add experimental data if available
     if experimental_data is not None:
@@ -450,14 +480,14 @@ def plot_global(t_global, sol_global, circuit, experimental_data=None,):
         )
 
         # Calculate and display comparison metrics if time ranges overlap
-        t_min = max(float(t_global.min()), float(exp_time.min()))
-        t_max = min(float(t_global.max()), float(exp_time.max()))
+        t_min = max(float(t.min()), float(exp_time.min()))
+        t_max = min(float(t.max()), float(exp_time.max()))
 
         if t_max > t_min:
             # Interpolate both datasets to common time grid for comparison
-            
+
             common_time = np.linspace(t_min, t_max, 200)
-            computed_interp = np.interp(common_time, t_global, voltage)
+            computed_interp = np.interp(common_time, t, voltage)
             exp_interp = np.interp(common_time, exp_time, exp_voltage)
 
             # Calculate RMS difference and MAE
@@ -482,11 +512,11 @@ def plot_global(t_global, sol_global, circuit, experimental_data=None,):
     axes[2].set_ylabel("Voltage (V)")
     axes[2].grid(True, alpha=0.3)
     axes[2].legend()
-    print('subplot voltage', flush=True)
+    print("subplot voltage", flush=True)
 
     # Variable resistance
     axes[3].plot(
-        t_global,
+        t,
         resistance_over_time,
         "m-",
         label=f"Resistance (T={circuit.temperature}°C)",
@@ -500,31 +530,28 @@ def plot_global(t_global, sol_global, circuit, experimental_data=None,):
         axes[3].set_title("Constant Resistance")
     axes[3].grid(True, alpha=0.3)
     axes[3].legend()
-    print('subplot resistance')
+    print("subplot resistance")
 
     # Power dissipation
-    axes[4].plot(t_global, power, "orange", label="Power Dissipation", linewidth=2)
+    axes[4].plot(t, power, "orange", label="Power Dissipation", linewidth=2)
     # axes[4].set_xlabel("Time (s)")
     axes[4].set_ylabel("Power (W)")
     axes[4].set_title("Power Dissipation P = R(I,T) × I²")
     axes[4].grid(True, alpha=0.3)
     axes[4].legend()
-    print('subplot resistance')
+    print("subplot resistance")
 
     # Tracking error
-    axes[5].plot(t_global, error, "r-", label="Tracking Error", linewidth=2)
+    axes[5].plot(t, error, "r-", label="Tracking Error", linewidth=2)
     axes[5].set_xlabel("Time (s)")
     axes[5].set_ylabel("Error (A)")
     axes[5].set_title("Current Tracking Error")
     axes[5].grid(True, alpha=0.3)
     axes[5].legend()
-    print('subplot error')
-
+    print("subplot error")
 
     plt.tight_layout()
     plt.show()
-
-
 
 
 def analytics(

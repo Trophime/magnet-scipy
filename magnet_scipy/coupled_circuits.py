@@ -1,6 +1,7 @@
 import numpy as np
 from typing import List, Tuple
 
+
 from .rlcircuitpid import RLCircuitPID
 
 
@@ -24,12 +25,9 @@ class CoupledRLCircuitsPID:
             circuits: List of RLCircuitPID instances
             mutual_inductances: NxN matrix of mutual inductances M[i,j] between circuits i and j
                                If None, creates symmetric coupling matrix
-         """
+        """
         self.circuits = circuits
         self.n_circuits = len(circuits)
-
-        if self.n_circuits < 2:
-            raise ValueError("Need at least 2 circuits for coupling")
 
         # Validate that all circuits have circuit_id
         self.circuit_ids = []
@@ -43,28 +41,37 @@ class CoupledRLCircuitsPID:
             raise ValueError("All circuits must have unique circuit_id values")
 
         # Initialize mutual inductance matrix
+        L_values = [circuit.L for circuit in self.circuits]
+        self.M = np.zeros((self.n_circuits, self.n_circuits))
+        np.fill_diagonal(self.M, L_values)
+
         if mutual_inductances is not None:
-            if mutual_inductances.shape != (self.n_circuits, self.n_circuits):
-                raise ValueError(
-                    f"Mutual inductance matrix must be {self.n_circuits}x{self.n_circuits}"
+            extra_diag_terms = int(self.n_circuits * (self.n_circuits - 1) / 2)
+            if extra_diag_terms != 0:
+                if mutual_inductances.shape[0] != (extra_diag_terms):
+                    raise ValueError(
+                        f"Mutual inductance matrix must be {extra_diag_terms}: shape={mutual_inductances.shape[0]}"
+                    )
+
+                # create a symetric 2d numpy array from mutual_inductances
+                M = np.array(mutual_inductances)
+                print(f"loaded extra_diag terms: {M}")
+                triu_indices = np.triu_indices(self.n_circuits, k=1)
+                print(
+                    f"Setting mutual inductances for {extra_diag_terms}: triu_indices={triu_indices}"
                 )
-            
-            # create a symetric 2d numpy array from mutual_inductances
-            L_values = [circuit.L for circuit in self.circuits] 
-            self.M = np.zeros(self.n_circuits, self.n_circuits)
-            np.fill_diagonal(self.M, L_values)
-            M = np.array(mutual_inductances)
-            triu_indices = np.triu_indices(self.n_circuits, k=1)
-            self.M[triu_indices] = M[triu_indices]
-            self.M = self.M + self.M.T - np.diag(np.diag(self.M))  # Make symmetric
+                self.M[triu_indices] = M
+                self.M = self.M + self.M.T - np.diag(np.diag(self.M))  # Make symmetric
+
         else:
-            raise RuntimeError("mutal_inductances undefined")
+            if self.n_circuits >= 1:
+                raise RuntimeError("mutual_inductances must be defined")
 
         # Validate mutual inductance matrix
         self._validate_coupling_matrix()
 
         # Pid Controller params
-         
+
         print(f"Initialized {self.n_circuits} coupled RL circuits")
         print(f"Circuit IDs: {self.circuit_ids}")
 
@@ -88,30 +95,44 @@ class CoupledRLCircuitsPID:
         circuit = self.circuits[circuit_idx]
         return circuit.reference_current(t)
 
-    def get_pid_parameters(
-        self, circuit_idx: int, i_ref: float
-    ) -> Tuple[float, float, float]:
-        """Get PID parameters for a specific circuit"""
-        circuit = self.circuits[circuit_idx]
-        return circuit.get_pid_parameters(i_ref)
+    def get_resistances(
+        self, currents: List[float], temperatures: List[float] = None
+    ) -> List[float]:
+        """Get resistance for a specific circuit"""
+        if temperatures is not None:
+            return [
+                circuit.get_resistance(currents[i], temperatures[i])
+                for i, circuit in enumerate(self.circuits)
+            ]
+        else:
+            return [
+                circuit.get_resistance(currents[i])
+                for i, circuit in enumerate(self.circuits)
+            ]
 
-    def get_pid_params(self, i_ref: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def get_reference_currents(self, t: float) -> List[float]:
+        """Get reference current for a specific circuit"""
+        return [circuit.reference_current(t) for circuit in self.circuits]
+
+    def get_pid_parameters(
+        self, i_ref: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Get PID parameters for all circuits"""
-        Kp = np.zeros((self.n_circuits, self.n_circuits))
-        Ki = np.zeros((self.n_circuits, self.n_circuits))
-        Kd = np.zeros((self.n_circuits, self.n_circuits))
+        Kp = np.zeros(self.n_circuits)
+        Ki = np.zeros(self.n_circuits)
+        Kd = np.zeros(self.n_circuits)
         for n, circuit in enumerate(self.circuits):
             kp, ki, kd = circuit.get_pid_parameters(i_ref[n])
-            Kp[n, n] = kp
-            Ki[n, n] = ki
-            Kd[n, n] = kd
+            Kp[n] = kp
+            Ki[n] = ki
+            Kd[n] = kd
         return Kp, Ki, Kd
-    
+
     def get_current_region(self, circuit_idx: int, i_ref: float) -> str:
         """Get current region name for a specific circuit"""
         circuit = self.circuits[circuit_idx]
         return circuit.get_current_region(i_ref)
-    
+
     def voltage_vector_field(self, t: float, y, u: np.ndarray = None):
         """
         RL circuit ODE
@@ -124,17 +145,21 @@ class CoupledRLCircuitsPID:
             u = np.array([circuit.input_voltage(t) for circuit in self.circuits])
 
         # Get current-dependent resistance
-        R_current = np.array([circuit.get_resistance(i[n]) for n,circuit in enumerate(self.circuits)]) 
-        
+        temperatures = [circuit.get_temperature(t) for circuit in self.circuits]
+        R_current = np.array(self.get_resistances(i.tolist(), temperatures))
+        # print("R_current:", R_current, "i=", i, "temperatures=", temperatures)
+
         net_voltages = u - R_current * i  # Net voltages after resistive drop
         try:
-            di_dt = np.linalg.solve(self.M, net_voltages)      
+            di_dt = np.linalg.solve(self.M, net_voltages)
         except np.linalg.LinAlgError as e:
             raise RuntimeError(f"Singular inductance matrix: {e}")
         return di_dt
 
     # TODO: by default make di_ref_dt: np.ndarray of dimensions ncircuits with zeros
-    def vector_field(self, t: float, y: np.ndarray, di_ref_dt: np.ndarray = None) -> np.ndarray:
+    def vector_field(
+        self, t: float, y: np.ndarray, di_ref_dt: np.ndarray = None
+    ) -> np.ndarray:
         """
         Define the system dynamics as a vector field with variable resistance and adaptive PID
 
@@ -143,35 +168,42 @@ class CoupledRLCircuitsPID:
         - i: current
         - integral_error: integral of error for PID
         """
-        i, integral_error = y
+        i = y[: self.n_circuits]
+        integral_error = y[self.n_circuits :]
 
         # Get parameters
-        R_current = np.array([circuit.get_resistance(i[n]) for n, circuit in enumerate(self.circuits)])
-        i_ref = np.array([circuit.reference_current(t) for circuit in self.circuits])
+        temperatures = [circuit.get_temperature(t) for circuit in self.circuits]
+        R_current = np.array(self.get_resistances(i, temperatures))
+        i_ref = np.array(self.get_reference_currents(t))
 
         Kp, Ki, Kd = self.get_pid_parameters(i_ref)
-        
+
         # Analytical di/dt
-        numerator = (-(R_current + Kp) * i + 
-                    Kp * i_ref + 
-                    Ki * integral_error + 
-                    Kd * di_ref_dt)
-        
+        numerator = (
+            -(R_current + Kp) * i + Kp * i_ref + Ki * integral_error + Kd * di_ref_dt
+        )
+
         try:
-            di_dt = np.linalg.solve(self.M + Kd, numerator)      
+            M_ = np.zeros((self.n_circuits, self.n_circuits))
+            np.fill_diagonal(M_, Kd)
+            M_ += self.M
+            di_dt = np.linalg.solve(M_, numerator)
         except np.linalg.LinAlgError as e:
-            raise RuntimeError(f"Singular inductance matrix: {e}")  
-        
+            raise RuntimeError(f"Singular inductance matrix: {e}")
+
         # Integral error evolution
         error = i_ref - i
         dintegral_dt = error
-        
-        return np.array([di_dt, dintegral_dt])
 
-    def get_initial_conditions(self) -> np.ndarray:
+        return np.concatenate([di_dt, dintegral_dt])
+
+    def get_initial_conditions(self, mode: str = "regular") -> np.ndarray:
         """Get initial conditions for all circuits"""
-        # Each circuit: [current, integral_error, prev_error]
-        y0 = np.zeros(self.n_circuits * 3)
+        # Each circuit: [current] if mode="regular", [current, integral_error] other wise
+        if mode == "regular":
+            y0 = np.zeros(self.n_circuits)
+        else:
+            y0 = np.zeros(self.n_circuits * 2)
         return y0
 
     def print_configuration(self):
@@ -184,7 +216,7 @@ class CoupledRLCircuitsPID:
         for i in range(self.n_circuits):
             row_str = "  "
             for j in range(self.n_circuits):
-                row_str += f"{float(self.M[i,j]):8.4f} "
+                row_str += f"{float(self.M[i,j]):8.6f} "
             print(row_str)
 
         print("\nIndividual Circuit Configurations:")
@@ -229,9 +261,7 @@ class CoupledRLCircuitsPID:
         new_M = new_M.at[:old_n_circuits, :old_n_circuits].set(old_M)
 
         self.M = new_M
-        print(
-            f"Added circuit '{circuit.circuit_id}'"
-        )
+        print(f"Added circuit '{circuit.circuit_id}'")
 
     def remove_circuit(self, circuit_id: str) -> None:
         """
@@ -324,5 +354,3 @@ class CoupledRLCircuitsPID:
     def __repr__(self) -> str:
         """String representation of the coupled system"""
         return f"CoupledRLCircuitsPID(n_circuits={self.n_circuits}, ids={self.circuit_ids})"
-
-

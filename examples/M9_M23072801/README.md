@@ -47,6 +47,7 @@ M9_2023.09.15---20:07:01.txt : Tin2 range(, 21.8), Tin1 range(, 21.3)
 M9_2023.09.16---17:55:22.txt : Tin2 range(, 19), Tin1 range(, 18.5) ** 
 ```
 
+
 ## pigbrother
 
 ```
@@ -94,4 +95,12 @@ M9_Overview_230916-1755.tdms
 /home/LNCMI-G/christophe.trophime/github/python_magnetrun/pigbrotherdata/Fichiers_Data/M9/Fichiers_Archive/M9_Archive_230916-1755.tdms
 ```
 
+NB: to extract data as csv
 
+```bash
+python -m python_magnetrun.python_magnetrun M9_2023.09.16---17\:55\:22.txt select --output_key UH UB TinH TinB FlowH FlowB teb debitbrut
+python -m python_magnetrun.python_magnetrun M9_M23072801/M9_Overview_230916-1755.tdms select --output_key Courants_Alimentations/Courant_GR1 Courants_Alimentations/Courant_GR2 
+```
+## inital conditions
+
+"i0": "IH": -6.32 A, "IB": 4.04 A for M9_2023.09.16---17:55:22.txt, M9_Overview_230916-1755.tdms

@@ -18,6 +18,7 @@ class RLCircuitPID:
         voltage_csv: str = None,
         resistance_csv: str = None,
         temperature: float = 25.0,
+        temperature_csv: str = None,
         circuit_id: str = None,  # NEW: Circuit identifier
         # Backward compatibility: individual PID parameters (deprecated)
         **pid_kwargs,
@@ -32,6 +33,7 @@ class RLCircuitPID:
             reference_csv: Path to CSV file with reference current data
             resistance_csv: Path to CSV file with resistance data R(I, Tin)
             temperature: Temperature (°C) for resistance calculation
+            temperature_csv: Path to CSV file with temperature Tin data
             circuit_id: Unique identifier for this circuit (required for coupled systems)
             **pid_kwargs: Backward compatibility parameters for creating PID controller
         """
@@ -51,6 +53,9 @@ class RLCircuitPID:
                 print(f"create PID from kwargs: {voltage_csv}")
                 self.pid_controller = self._create_pid_from_kwargs(**pid_kwargs)
 
+        self.voltage_csv = voltage_csv
+        self.reference_csv = reference_csv
+
         # Handle resistance
         self.use_variable_resistance = False
         if resistance_csv:
@@ -60,11 +65,19 @@ class RLCircuitPID:
             print(f"Using constant resistance: {R} Ω")
 
         # Always initialize these to None first - PREVENTS AttributeError
+        self.temperature_func = None
         self.reference_func = None
         self.voltage_func = None
         self.use_csv_data = False
 
         # Load reference current from CSV if provided
+        self.use_variable_temperature = False
+        if temperature_csv:
+            self.load_temperature_from_csv(temperature_csv)
+        else:
+            self.temperature = temperature
+            print(f"Using constant temperature: {temperature} °C")
+
         if reference_csv:
             self.load_reference_from_csv(reference_csv)
 
@@ -111,6 +124,23 @@ class RLCircuitPID:
             )
         except Exception as e:
             raise RuntimeError(f"Error loading resistance CSV file {csv_file}: {e}")
+
+    def load_temperature_from_csv(self, csv_file: str):
+        """Load temperature from CSV file using Scipy"""
+        print(f"loading temperature from csv {csv_file}")
+        try:
+            self.temperature_func, self.temperature_time_data, self.temperature_data = (
+                create_function_from_csv(csv_file, "time", method="linear")
+            )
+
+            self.use_variable_temperature = True
+            print(f"Loaded temperature {csv_file} using Scipy interpolation")
+            print(
+                f"Time range: {float(self.time_data[0]):.3f} to {float(self.time_data[-1]):.3f} seconds"
+            )
+
+        except Exception as e:
+            raise RuntimeError(f"Error loading CSV file {csv_file}: {e}")
 
     def load_reference_from_csv(self, csv_file: str):
         """Load reference current from CSV file using Scipy"""
@@ -166,12 +196,21 @@ class RLCircuitPID:
         """
         return self.pid_controller.get_current_region_name(i_ref)
 
-    def get_resistance(self, current: float) -> float:
+    def get_resistance(self, current: float, temperature: float = None) -> float:
         """Get resistance value based on current and temperature"""
         if self.use_variable_resistance:
-            return self.resistance_func(current, self.temperature)
+            if temperature is None:
+                temperature = self.temperature
+            return self.resistance_func(current, temperature)
         else:
             return self.R_constant
+
+    def get_temperature(self, t: float) -> float:
+        """Get input temperature at time t"""
+        if self.use_variable_temperature:
+            return self.temperature_func(t)
+        else:
+            return self.temperature
 
     def reference_current(self, t: float) -> float:
         """Get reference current at time t"""
@@ -181,7 +220,7 @@ class RLCircuitPID:
         """Get input voltage at time t"""
         return self.voltage_func(t)
 
-    def vector_field(self, t, y, di_ref_dt: float=0):
+    def vector_field(self, t, y, di_ref_dt: float = 0):
         """
         Define the system dynamics as a vector field with variable resistance and adaptive PID
 
@@ -191,28 +230,27 @@ class RLCircuitPID:
         - integral_error: integral of error for PID
         """
         i, integral_error = y
-        
+
         # Get parameters
-        R_current = self.get_resistance(i)
+        temperature = self.get_temperature(t)
+        R_current = self.get_resistance(i, temperature)
         i_ref = self.reference_current(t)
         # di_ref_dt = self.reference_current_derivative
         Kp, Ki, Kd = self.get_pid_parameters(i_ref)
-        
+
         # Analytical di/dt
-        numerator = (-(R_current + Kp) * i + 
-                    Kp * i_ref + 
-                    Ki * integral_error + 
-                    Kd * di_ref_dt)
+        numerator = (
+            -(R_current + Kp) * i + Kp * i_ref + Ki * integral_error + Kd * di_ref_dt
+        )
         di_dt = numerator / (self.L + Kd)
-        
+
         # Integral error evolution
         error = i_ref - i
         dintegral_dt = error
-        
-        return np.array([di_dt, dintegral_dt])
-    
 
-    def voltage_vector_field(self, t: float, y, u: float=None):
+        return np.array([di_dt, dintegral_dt])
+
+    def voltage_vector_field(self, t: float, y, u: float = None):
         """
         RL circuit ODE
         """
@@ -224,7 +262,8 @@ class RLCircuitPID:
             u = self.input_voltage(t)
 
         # Get current-dependent resistance
-        R_current = self.get_resistance(i)
+        temperature = self.get_temperature(t)
+        R_current = self.get_resistance(i, temperature)
 
         # Circuit dynamics: L * di/dt = -R(i,T) * i + u
         di_dt = (-R_current * i + u) / self.L
@@ -236,14 +275,31 @@ class RLCircuitPID:
         print(f"\n=== {self.circuit_id} Configuration ===")
         print(f"Circuit ID: {self.circuit_id}")
         print(f"Inductance (L): {self.L} H")
-        print(f"Temperature: {self.temperature}°C")
+        if self.use_variable_temperature:
+            print("Using variable temperature from CSV")
+            temp_min = float(self.temperature_data.min())
+            temp_max = float(self.temperature_data.max())
+            print(f"Temperature range: {temp_min:.3f} to {temp_max:.3f} °C over time")
+
+        else:
+            print(f"Temperature: {self.temperature}°C")
 
         if self.use_variable_resistance:
             print("Using variable resistance from CSV")
+            current_min = float(self.current_range.min())
+            current_max = float(self.current_range.max())
+            if self.use_variable_temperature:
+                # find min and max of R(I,T)
+                raise NotImplementedError(
+                    "find Min/max for R over current range and temperature range"
+                )
             # compute Resistance range for current range at given temperature
-            R_min = self.get_resistance(float(self.current_range.min()))
-            R_max = self.get_resistance(float(self.current_range.max()))
-            print(f"Resistance range: {R_min:.3f} to {R_max:.3f} Ω over current range")
+            else:
+                R_min = self.get_resistance(current_min)
+                R_max = self.get_resistance(current_max)
+                print(
+                    f"Resistance range: {R_min:.3f} to {R_max:.3f} Ω over current range (T = {self.temperature} °C)"
+                )
         else:
             print(f"Constant resistance: {self.R_constant} Ω")
 

@@ -1,0 +1,20 @@
+{
+  "name": "M19",
+  "circuits": [
+    {
+      "circuit_id": "M9Bitters_18MW",
+      "temperature": 12.2,
+      "inductance": 0.01254,
+      "resistance_csv": "Rtot_M9Bitters_18MW.csv",
+      "voltage_csv": "M19_Overview_240208-0941-Tensions_Aimant_ALL_externes.csv"
+    },
+    {
+      "circuit_id": "M10Bitters",
+      "temperature": 12.2,
+      "inductance": 0.01254,
+      "resistance_csv": "Rtot_M10Bitters.csv",
+      "voltage_csv": "M19_Overview_240208-0941-Tensions_Aimant_ALL_externes2.csv"
+    }
+  ],
+  "mutual_inductances": [0]
+}

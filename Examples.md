@@ -2,6 +2,8 @@
 
 * voltage mode
 
+* using `main`:
+
 ```bash
 python -m magnet_scipy.main \
   --experimental_csv examples/M19/M19_Overview_240208-0941_current.csv \
@@ -12,6 +14,35 @@ python -m magnet_scipy.main \
   --value_start 200 \
   --time_start 0 --time_end 6000  --time_step 0.01
 ```
+
+* using `couple_main`:
+
+```bash
+python -m magnet_scipy.coupled_main \
+  --wd examples/M19/  \
+  --config-file M9Bitters_18MW.json \
+  --value_start 200  \
+  --time_end 6000 --time_step 0.01 \
+  --experimental_csv M19_Overview_240208-0941_current.csv
+```
+with
+
+```json
+{
+  "name": "M9_xxx",
+  "circuits": [
+    {
+      "circuit_id": "M9Bitters_18MW",
+      "temperature": 12.2,
+      "inductance": 0.01254,
+      "resistance_csv": "Rtot_M9Bitters_18MW.csv",
+      "voltage_csv": "M19_Overview_240208-0941-Tensions_Aimant_ALL_externes.csv"
+    }
+  ],
+  "mutual_inductances": []
+}
+```
+
 * pid mode - running pid each time_step
 
 ```bash

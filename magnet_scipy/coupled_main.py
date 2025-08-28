@@ -20,11 +20,15 @@ from .coupled_plotting import (
     prepare_coupled_post,
     plot_coupled_vresults,
     plot_coupled_results,
-    plot_region_analysis,
-    analyze_coupling_effects,
     save_coupled_results,
 )
-from pid_controller import create_adaptive_pid_controller
+from .pid_controller import create_adaptive_pid_controller
+
+
+class fake_sol:
+    def __init__(self, t, y):
+        self.t = t
+        self.y = y
 
 
 def load_circuit_configuration(config_file: str) -> List[RLCircuitPID]:
@@ -43,13 +47,14 @@ def load_circuit_configuration(config_file: str) -> List[RLCircuitPID]:
 
             # Create RLCircuitPID instance
             circuit = RLCircuitPID(
-                R=circuit_data.get("R", 1.0),
-                L=circuit_data.get("L", 0.1),
+                R=circuit_data.get("resistance", 1.0),
+                L=circuit_data.get("inductance", 0.1),
                 pid_controller=pid_controller,
                 reference_csv=circuit_data.get("reference_csv", None),
                 voltage_csv=circuit_data.get("voltage_csv", None),
                 resistance_csv=circuit_data.get("resistance_csv"),
                 temperature=circuit_data.get("temperature", 25.0),
+                temperature_csv=circuit_data.get("temperature_csv", None),
                 circuit_id=circuit_data.get("circuit_id", f"circuit_{len(circuits)+1}"),
             )
             circuits.append(circuit)
@@ -88,20 +93,28 @@ def run_coupled_simulation(args):
             "Mutual inductance matrix must be provided in configuration file."
         )
 
+    for circuit in coupled_system.circuits:
+        circuit.print_configuration()
+
     # Set experimental data if provided
     voltage_csvs = [circuit.voltage_csv for circuit in coupled_system.circuits]
     reference_csvs = [circuit.reference_csv for circuit in coupled_system.circuits]
+    print(f"Voltage CSVs: {voltage_csvs}")
+    print(f"Reference CSVs: {reference_csvs}")
 
     key = "voltage"
+    exp_key = "current"
     if all(v is None for v in voltage_csvs):
         key = "current"
+        exp_key = "voltage"
+    print(f"Using {key} control based on available CSV files.")
 
     experimental_data = {}
     if args.experimental_csv:
         exp_files = args.experimental_csv.split(",")
         if len(exp_files) != coupled_system.n_circuits:
-            print(
-                f"Warning: Number of experimental files ({len(exp_files)}) does not match number of circuits ({coupled_system.n_circuits})."
+            raise ValueError(
+                f"Number of experimental files ({len(exp_files)}) does not match number of circuits ({coupled_system.n_circuits})."
             )
         for i, exp_file in enumerate(exp_files):
             circuit_id = coupled_system.circuits[i].circuit_id
@@ -110,9 +123,9 @@ def run_coupled_simulation(args):
                 exp_data = pd.read_csv(exp_file)
 
                 # Validate required columns
-                if "time" not in exp_data.columns or key not in exp_data.columns:
+                if "time" not in exp_data.columns or exp_key not in exp_data.columns:
                     raise ValueError(
-                        f"Experimental CSV must contain 'time' and {key} columns"
+                        f"Experimental CSV must contain 'time' and {exp_key} columns"
                     )
                 print(f"✓ Experimental data loaded: {len(exp_data['time'])} points")
             except Exception as e:
@@ -124,6 +137,10 @@ def run_coupled_simulation(args):
 
     # Print configuration
     coupled_system.print_configuration()
+    if len(args.value_start) != coupled_system.n_circuits:
+        raise ValueError(
+            f"Number of initial values ({len(args.value_start)}) must match number of circuits ({coupled_system.n_circuits})"
+        )
 
     # Time parameters
     t0, t1 = args.time_start, args.time_end
@@ -133,7 +150,7 @@ def run_coupled_simulation(args):
     if key == "current":
         mode = "cde"
 
-    print(f"\nRunning simulation {mode}...")
+    print(f"\nRunning simulation mode={mode}...")
     print(f"Time span: {t0} to {t1} seconds")
     print(f"Time step: {dt} seconds")
 
@@ -164,7 +181,7 @@ def run_coupled_simulation(args):
 
         # Post-process results
         print("Processing results...")
-        t, results = prepare_coupled_post(sol, coupled_system)
+        t, results = prepare_coupled_post(sol, coupled_system, mode, experimental_data)
 
         print("Generating plots...")
         plot_coupled_vresults(
@@ -184,10 +201,10 @@ def run_coupled_simulation(args):
         all_y = []
 
         print(f"\nUsing CDE for PID control: {reference_csvs}")
-        i0 = args.value_start
+        i0 = np.array(args.value_start)
         print(f"\nInitial current: {i0} A at t={t0} s")
-        i0_ref = [circuit.reference_current(t0) for circuit in coupled_system.circuits]
-        print(f"init ref: {i0_ref:.3f} A at t={t0:.3f} s")
+        i0_ref = np.array(coupled_system.get_reference_currents(t0))
+        print(f"init ref: {i0_ref} A at t={t0:.3f} s")
         v0 = []
         if experimental_data is not None:
             for circuit in coupled_system.circuits:
@@ -197,13 +214,10 @@ def run_coupled_simulation(args):
                     data = pd.read_csv(exp_file)
 
                     v0.append(np.interp(t0, data["time"], data["voltage"]))
-            print(f"init exp: {v0:.3f} V at t={t0:.3f} s")
+            print(f"init exp: {v0} V at t={t0:.3f} s")
 
         # merge all references
-        # sort references
-        # remove duplicates
         merged_ref = pd.read_csv(reference_csvs[0])
-        # rename current colum,
         merged_ref = merged_ref.rename(columns={"current": "current1"})
         for n in range(1, len(reference_csvs) - 1):
             df = pd.read_csv(reference_csvs[n])
@@ -230,10 +244,103 @@ def run_coupled_simulation(args):
             f"\nPID controller: run pid for each sequence of reference_current ({merged_ref.shape[0]} sequences)..."
         )
         for n in range(closest_index + 1, merged_ref.shape[0] - 1):
+            t_actual = float(merged_ref["time"].iloc[n])
+            t_previous = float(merged_ref["time"].iloc[n - 1])
             print(
-                f'n={n}, t={merged_ref["time"].iloc[n]:.3f} s, ref={merged_ref.filter(regex="current*").iloc[n]} A',
+                f'n={n}, t={t_actual:.3f} s, ref={merged_ref.filter(regex="current*").iloc[n].values} A',
+                end=", ",
             )
-        print("not implemented yet")
+            di_refdt = (
+                np.array(coupled_system.get_reference_currents(t_actual))
+                - np.array(coupled_system.get_reference_currents(t_previous))
+            ) / (t_actual - t_previous)
+            print(f"di_refdt={di_refdt} A/s", end=", ")
+            t_span = (
+                float(t_previous),
+                float(t_actual),
+            )
+            print(f"t_span: {t_span}", end=", ", flush=True)
+            y0 = np.concatenate([i0, error])
+            print(f"y0: {y0}", end=": ", flush=True)
+            sol = solve_ivp(
+                lambda t, current: coupled_system.vector_field(
+                    t, current, di_ref_dt=di_refdt
+                ),
+                t_span,
+                y0,
+                method="RK45",
+                dense_output=True,
+                rtol=1e-6,
+                atol=1e-9,
+                max_step=dt,
+            )
+
+            currents = sol.y[: coupled_system.n_circuits]
+            integral_error = sol.y[coupled_system.n_circuits :]
+            print(f"tfinal={float(sol.t[-1])} s", end=",", flush=True)
+            print(f"i1={currents[:, -1]} A", end=", ", flush=True)
+            print(f"integral_error1={integral_error[:, -1]} A", end=", ", flush=True)
+            print("✓ Simulation completed")
+
+            # Store the time points and solution
+            all_t.append(sol.t)
+            all_y.append(sol.y)
+            # Handling Overlaps: If your intervals overlap or you want to avoid duplicate points at boundaries, you can slice appropriately:
+            # all_t.append(sol.t[:-1] if n < len(circuit.time_data)-1 else sol.t)  # Remove last point except for final interval
+            # all_y.append(sol.y[:, :-1] if n < len(circuit.time_data)-1 else sol.y)            # update for next iteration
+
+            # print("Postprocessing for plots...")
+            if args.debug:
+                # Post-process results
+                print("Processing results...")
+                t, results = prepare_coupled_post(
+                    sol, coupled_system, mode, experimental_data
+                )
+
+                print("Generating plots...")
+                plot_coupled_results(
+                    sol,
+                    coupled_system,
+                    t,
+                    results,
+                    experimental_data,
+                    save_path=None,
+                    show=True,
+                )
+
+            # update for next iteration
+            i0 = currents[:, -1]
+            error = integral_error[:, -1]
+
+        # Run simulation
+        print("✓ Simulation completed")
+
+        # Concatenate all results
+        t_global = np.concatenate(all_t)
+        y_global = np.concatenate(all_y, axis=1)
+
+        print(f"Total time points: {len(t_global)}")
+        u, c = np.unique(t_global, return_counts=True)
+        duplicates = u[c > 1]
+        if len(duplicates) > 0:
+            print(f"Warning: Duplicate time points found: {duplicates}")
+
+        # Post-process results
+        print("Processing results...")
+        t, results = prepare_coupled_post(
+            fake_sol(t_global, y_global), coupled_system, mode, experimental_data
+        )
+
+        print("Generating plots...")
+        plot_coupled_results(
+            sol,
+            coupled_system,
+            t,
+            results,
+            experimental_data,
+            save_path=args.save_plots,
+            show=args.show_plots,
+        )
 
     # Save results if requested
     if args.save_results:
@@ -260,7 +367,6 @@ def main():
     parser.add_argument("--wd", type=str, help="Working directory")
     parser.add_argument(
         "--config-file",
-        "-c",
         type=str,
         help="Path to JSON configuration file with circuit definitions",
     )
@@ -268,7 +374,6 @@ def main():
     # TODO make experimental_csv a list
     parser.add_argument(
         "--experimental_csv",
-        "-e",
         nargs="?",
         type=str,
         help="Path to CSV file with experimental current (columns: time, input) or voltage data (columns: time, voltage) for comparison ",
@@ -277,58 +382,77 @@ def main():
     # Simulation parameters
     parser.add_argument(
         "--value_start",
-        nargs="?",
+        nargs="+",
         type=float,
         help="Current values at start time in Ampere",
     )
 
     parser.add_argument(
-        "--time-start", type=float, default=0.0, help="Simulation start time in seconds"
+        "--time_start", type=float, default=0.0, help="Simulation start time in seconds"
     )
 
     parser.add_argument(
-        "--time-end", type=float, default=5.0, help="Simulation end time in seconds"
+        "--time_end", type=float, default=5.0, help="Simulation end time in seconds"
     )
 
     parser.add_argument(
-        "--time-step", type=float, default=0.001, help="Simulation time step in seconds"
+        "--time_step", type=float, default=0.01, help="Simulation time step in seconds"
     )
 
     # Output options
     parser.add_argument(
-        "--show-plots",
-        "-p",
+        "--show_plots",
         action="store_true",
         help="Show plots of simulation results",
     )
 
     parser.add_argument(
-        "--show-analytics",
+        "--show_analytics",
         "-a",
         action="store_true",
         help="Show detailed analytics of simulation results",
     )
 
     parser.add_argument(
-        "--save-results",
+        "--save_results",
         type=str,
         help="Save results to specified file (e.g., results.npz)",
     )
     parser.add_argument(
-        "--save-plots",
+        "--save_plots",
         type=str,
         help="Save plots to specified file (e.g., plots.png)",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Activate debug mode",
     )
 
     # Parse arguments
     args = parser.parse_args()
+    print(f"args: {args}")
 
-    if args.wd:
+    if args.value_start is None:
+        args.value_start = [0.0]
+
+    if args.wd is not None:
         import os
 
-        pwd = os.chdir(args.wd)
-        print(f"Working directory set to: {args.wd}")
-    print("✓ Working directory:", os.getcwd())
+        pwd = os.getcwd()
+        os.chdir(args.wd)
+        print(f"Working directory set to: {args.wd} (pwd={pwd})")
+    print(f"✓ Working directory: {os.getcwd()}")
+
+    if args.save_plots and args.show_plots:
+        raise RuntimeError(
+            "⚠️ Warning: Both --save-plots and --show-plots specified. Plots will be saved and shown."
+        )
+    if not args.save_plots and not args.show_plots:
+        print(
+            "⚠️ Warning: Neither --save-plots nor --show-plots specified. Force show_plots."
+        )
+        args.show_plots = True
 
     # Validate configuration file if provided
     if args.config_file:
@@ -372,7 +496,7 @@ def main():
         traceback.print_exc()
         sys.exit(1)
 
-    if args.wd:
+    if args.wd is not None:
         os.chdir(pwd)
         print(f"Returned to original directory: {pwd}")
 
