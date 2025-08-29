@@ -6,9 +6,10 @@
 
 ```bash
 python -m magnet_scipy.main \
-  --experimental_csv examples/M19/M19_Overview_240208-0941_current.csv \
-  --voltage_csv examples/M19/M19_Overview_240208-0941-Tensions_Aimant_ALL_externes.csv \
-  --resistance_csv examples/M19/Rtot_M9Bitters_18MW.csv \
+  --wd  examples/M19 \
+  --experimental_csv M19_Overview_240208-0941_current.csv \
+  --voltage_csv M19_Overview_240208-0941-Tensions_Aimant_ALL_externes.csv \
+  --resistance_csv Rtot_M9Bitters_18MW.csv \
   --inductance 0.01254 \
   --temperature 12.2 \
   --value_start 200 \
