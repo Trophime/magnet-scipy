@@ -224,6 +224,8 @@ If you use Magnet Scipy in your research, please cite:
 
 ## todos
 
+* [ ] test for extrapolation of csv 1D tabulated data
+* [ ] implement extrapolation for 2D tabulated data
 * [ ] test couple_main for one circuit with regular modeling
 * [ ] test couple_main for one circuit with pid modeling
 * [ ] test couple_main for two circuits with regular modeling - case M = 0 
