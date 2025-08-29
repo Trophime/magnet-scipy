@@ -20,27 +20,7 @@
         "low_threshold": 60,
         "high_threshold": 800
       }
-    },
-    {
-      "circuit_id": "M10Bitters",
-      "temperature": 12.2,
-      "inductance": 0.01254,
-      "resistance_csv": "Rtot_M10Bitters.csv",
-      "reference_csv": "M19_Overview_240208-0941-Courants_Alimentations_Référence_GR1.csv",
-      "pid_params": {
-        "Kp_low": 10.0,
-        "Ki_low": 1,
-        "Kd_low": 0,
-        "Kp_medium": 10.0,
-        "Ki_medium": 1.0,
-        "Kd_medium": 0,
-        "Kp_high": 10.0,
-        "Ki_high": 1.0,
-        "Kd_high": 0.0,
-        "low_threshold": 60,
-        "high_threshold": 800
-      }
     }
   ],
-  "mutual_inductances": [0]
+  "mutual_inductances": []
 }
