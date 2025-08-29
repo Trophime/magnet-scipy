@@ -50,7 +50,7 @@ pip install -e ".[dev]"
 ```
 
 ### Dependencies
-- **Core**: ScyPy (≥1.14.0), NumPy (≥1.21.0), Pandas (≥1.3.0), simple-pid (≥2.0.0)
+- **Core**: ScyPy (≥1.14.0), NumPy (≥1.21.0), Pandas (≥1.3.0)
 - **Plotting**: Matplotlib (≥3.5.0), Seaborn (≥0.11.0)
 - **Development**: pytest, black, flake8, mypy
 
@@ -221,6 +221,30 @@ If you use Magnet Scipy in your research, please cite:
   year = {2024}
 }
 ```
+
+## todos
+
+* [ ] test couple_main for one circuit with regular modeling
+* [ ] test couple_main for one circuit with pid modeling
+* [ ] test couple_main for two circuits with regular modeling - case M = 0 
+* [ ] test couple_main for one circuits with pid modeling - case M = 0
+* [ ] test couple_main for two circuits with regular modeling - case M!=0 
+* [ ] test couple_main for one circuits with pid modeling - case M != 0
+* [ ] set args.time_start, args.time_end from input csv and/or exp_data when available
+* [ ] args.time_start: cannot be less that t0 from input csv
+* [ ] args.time_end: cannot be greater that t1 from input csv
+* [ ] read from csv using name of columns for input/output
+* [ ] add notes on creating input data from magnetrun, magnetapi
+* [ ] add intermediate voltage taps
+* [ ] rework experimental data (add a dict per circuit_id for voltage, intermediate voltages, current)
+* [ ] enable the choice of the solver method in solver_ivp
+* [ ] use a different solver backend (eg diffrax/Jax)
+* [ ] performance benchmarks
+* [ ] add estimate Tout from pupitre data
+* [ ] couple with cooling model for estimate of Tin
+* [ ] add symbol, unit for field (try to use a single package to deal with that in all magnet related package)
+* [ ] when loading data from csv use text into bracket to get unit, always convert to SI
+* [ ] can display when a given unit (eg MW for Power instead of W)
 
 ## Acknowledgments
 

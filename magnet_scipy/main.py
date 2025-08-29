@@ -16,7 +16,13 @@ from .pid_controller import (
     create_adaptive_pid_controller,
 )
 from .rlcircuitpid import RLCircuitPID
-from .plotting import prepare_post, plot_results, analytics, plot_vresults, plot_global
+from .plotting import (
+    prepare_post,
+    plot_vresults,
+    plot_results,
+    save_results,
+)
+from .utils import fake_sol
 
 
 def run_simulation(args):
@@ -34,27 +40,22 @@ def run_simulation(args):
     # Load experimental data if provided
     experimental_data = None
     if args.experimental_csv:
-        try:
-            experimental_data = pd.read_csv(args.experimental_csv)
+        experimental_data = pd.read_csv(
+            args.experimental_csv, sep=None, engine="python"
+        )
 
-            key = "voltage"
-            if args.voltage_csv:
-                key = "current"
+        key = "voltage"
+        if args.voltage_csv:
+            key = "current"
 
-            # Validate required columns
-            if (
-                "time" not in experimental_data.columns
-                or key not in experimental_data.columns
-            ):
-                raise ValueError(
-                    f"Experimental CSV must contain 'time' and {key} columns"
-                )
-            print(
-                f"✓ Experimental data loaded: {len(experimental_data['time'])} points"
-            )
-        except Exception as e:
-            print(f"❌ Error loading experimental data: {e}")
-            experimental_data = None
+        # Validate required columns
+        if (
+            "time" not in experimental_data.columns
+            or key not in experimental_data.columns
+        ):
+            raise ValueError(f"Experimental CSV must contain 'time' and {key} columns")
+        print(f"✓ Experimental data loaded: {len(experimental_data['time'])} points")
+        print(f"experimental_data: {experimental_data}")
 
     # Create PID controller
     pid_controller = None
@@ -75,7 +76,9 @@ def run_simulation(args):
                 high_threshold=args.high_threshold,
             )
         else:
-            raise RuntimeError("Defining a PID is required -- add --custom_pid option with parameters")
+            raise RuntimeError(
+                "Defining a PID is required -- add --custom_pid option with parameters"
+            )
 
     # Create circuit
     circuit = RLCircuitPID(
@@ -98,14 +101,17 @@ def run_simulation(args):
 
     # Regular ODE
     post_data = None
+    mode = None
     if args.voltage_csv:
+        mode = "regular"
         print(f"\nUsing input voltage CSV: {args.voltage_csv}")
         i0 = args.value_start
         print(f"Initial current: {i0} A at t={t0} s")
         print(f"Initial voltage: {circuit.input_voltage(t0)} V at t={t0} s")
-        y0 = np.array([i0])
 
+        y0 = np.array([i0])
         print("y0:", y0, type(y0))
+
         t_span = (t0, t1)
         sol = solve_ivp(
             lambda t, current: circuit.voltage_vector_field(t, current),
@@ -119,14 +125,27 @@ def run_simulation(args):
         )
 
         print("✓ Simulation completed")
-        plot_vresults(sol, circuit, experimental_data=experimental_data)
+        # Post-process results
+        print("Processing results...")
+        t, results = prepare_post(sol, circuit, mode, experimental_data)
 
+        print("Generating plots...")
+        plot_vresults(
+            sol,
+            circuit,
+            t,
+            results,
+            experimental_data,
+            save_path=args.save_plots,
+            show=args.show_plots,
+        )
     else:
+        mode = "cde"
 
         # Store results
         all_t = []
         all_y = []
-        
+
         print(f"\nUsing reference current CSV: {args.reference_csv}")
         # Initial conditions [current, integral_error, prev_error]
         i0 = args.value_start
@@ -140,14 +159,32 @@ def run_simulation(args):
         closest_index = np.argmin(np.abs(circuit.time_data - t0))
         # shall check if circuit.time_data[closest_index] is greater than t0
 
-        error = i0_ref - i0 # ??how to initial integral error??
-        print(f"t0: {t0}, closest_index={closest_index}, time_data={circuit.time_data[closest_index]}, error={error}")
-        print(f"\nPID controller: run pid for each sequence of reference_current ({len(circuit.time_data)-1} sequences)...")
-        for n in range(closest_index+1, len(circuit.time_data) - 1):
-            print(f"n={n}, t={circuit.time_data[n]:.3f} s, ref={circuit.current_data[n]:.3f} A", end=", ")
-            di_refdt = (circuit.reference_current(circuit.time_data[n+1]) - circuit.reference_current(circuit.time_data[n-1])) / (circuit.time_data[n+1] - circuit.time_data[n-1])
+        error = i0_ref - i0  # ??how to initial integral error??
+        print(
+            f"t0: {t0}, closest_index={closest_index}, time_data={circuit.time_data[closest_index]}, error={error}"
+        )
+        print(
+            f"\nPID controller: run pid for each sequence of reference_current ({len(circuit.time_data)-1} sequences)..."
+        )
+        stop = False
+        for n in range(closest_index + 1, len(circuit.time_data) - 1):
+            t_actual = circuit.time_data[n]
+            if circuit.time_data[n] > args.time_end:
+                t_actual = args.time_end
+                stop = True
+            t_previous = circuit.time_data[n - 1]
+            t_next = circuit.time_data[n + 1]
+            iref = circuit.reference_current(t_actual)
+            print(
+                f"n={n}, t={t_actual:.3f} s, ref={iref:.3f} A",
+                end=", ",
+            )
+            di_refdt = (
+                circuit.reference_current(t_next)
+                - circuit.reference_current(t_previous)
+            ) / (t_next - t_previous)
             print(f"di_refdt={di_refdt:.3f} A/s", end=", ")
-            t_span = (float(circuit.time_data[n-1]), float(circuit.time_data[n]))
+            t_span = (float(t_previous), float(t_actual))
             print(f"t_span: {t_span}", end=", ", flush=True)
             y0 = np.array([i0, error])
             print(f"y0: {y0}", end=": ", flush=True)
@@ -161,7 +198,7 @@ def run_simulation(args):
                 atol=1e-9,
                 max_step=dt,
             )
-            print(f"tfinal={float(sol.t[-1])} s",  end=",", flush=True)
+            print(f"tfinal={float(sol.t[-1])} s", end=",", flush=True)
             print(f"i1={float(sol.y[0, -1])} A", end=", ", flush=True)
             print(f"integral_error1={float(sol.y[1, -1])} A", end=", ", flush=True)
             print("✓ Simulation completed")
@@ -171,41 +208,31 @@ def run_simulation(args):
             all_y.append(sol.y)
             # Handling Overlaps: If your intervals overlap or you want to avoid duplicate points at boundaries, you can slice appropriately:
             # all_t.append(sol.t[:-1] if n < len(circuit.time_data)-1 else sol.t)  # Remove last point except for final interval
-            # all_y.append(sol.y[:, :-1] if n < len(circuit.time_data)-1 else sol.y)            
-            
+            # all_y.append(sol.y[:, :-1] if n < len(circuit.time_data)-1 else sol.y)
+
             # print("Postprocessing for plots...")
             if args.debug:
-                post_data = prepare_post(sol, circuit)
-                (
-                    current_regions,
-                    Kp_over_time,
-                    Ki_over_time,
-                    Kd_over_time,
-                    voltage,
-                    error,
-                    resistance_over_time,
-                    power,
-                ) = post_data
+                # Post-process results
+                print("Processing results...")
+                t, results = prepare_post(sol, circuit, mode, experimental_data)
 
-                # print("Generating plots...")
+                print("Generating plots...")
                 plot_results(
                     sol,
                     circuit,
-                    current_regions,
-                    Kp_over_time,
-                    Ki_over_time,
-                    Kd_over_time,
-                    voltage,
-                    error,
-                    resistance_over_time,
-                    power,
-                    experimental_data=experimental_data,
+                    t,
+                    results,
+                    experimental_data,
+                    save_path=None,
+                    show=True,
                 )
+            if stop:
+                break
 
             # update for next iteration
             i0 = float(sol.y[0, -1])
             # i0_ref = circuit.reference_current(t_span[-1])
-            error = float(sol.y[1, -1]) # i0_ref - i0
+            error = float(sol.y[1, -1])  # i0_ref - i0
             # if n == 10:
             #    print("limit to 10 iterations for testing reached")
             #    break
@@ -213,15 +240,34 @@ def run_simulation(args):
         # Concatenate all results
         t_global = np.concatenate(all_t)
         y_global = np.concatenate(all_y, axis=1)
-        
+
         print(f"Total time points: {len(t_global)}")
         u, c = np.unique(t_global, return_counts=True)
         duplicates = u[c > 1]
         if len(duplicates) > 0:
             print(f"Warning: Duplicate time points found: {duplicates}")
 
-        # global plot
-        plot_global(t_global, y_global, circuit, experimental_data,)
+        # Post-process results
+        print("Processing results...")
+        t, results = prepare_post(
+            fake_sol(t_global, y_global), circuit, mode, experimental_data
+        )
+
+        print("Generating plots...")
+        plot_results(
+            sol,
+            circuit,
+            t,
+            results,
+            experimental_data,
+            save_path=args.save_plots,
+            show=args.show_plots,
+        )
+
+    # Save results if requested
+    if args.save_results:
+        print("save result to {args.save_results}")
+        save_results(circuit, t, results, args.save_results)
 
     return sol, circuit, post_data
 
@@ -233,6 +279,14 @@ def main():
         description="RL Circuit PID Control Simulation",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
+
+    # Configuration options
+    parser.add_argument(
+        "--version",
+        action="version",
+        version="Coupled RL Circuits PID Simulation 1.0",
+    )
+    parser.add_argument("--wd", type=str, help="Working directory")
 
     # Input files
     parser.add_argument(
@@ -359,6 +413,30 @@ def main():
         default=800.0,
         help="Medium to high current threshold",
     )
+
+    # Output options
+    parser.add_argument(
+        "--show_plots",
+        action="store_true",
+        help="Show plots of simulation results",
+    )
+
+    parser.add_argument(
+        "--show_analytics",
+        "-a",
+        action="store_true",
+        help="Show detailed analytics of simulation results",
+    )
+    parser.add_argument(
+        "--save_results",
+        type=str,
+        help="Save results to specified file (e.g., results.npz)",
+    )
+    parser.add_argument(
+        "--save_plots",
+        type=str,
+        help="Save plots to specified file (e.g., plots.png)",
+    )
     parser.add_argument(
         "--debug",
         action="store_true",
@@ -369,10 +447,28 @@ def main():
     args = parser.parse_args()
     # print(f"args: {args}")
 
+    if args.wd is not None:
+        import os
+
+        pwd = os.getcwd()
+        os.chdir(args.wd)
+        print(f"Working directory set to: {args.wd} (pwd={pwd})")
+    print(f"✓ Working directory: {os.getcwd()}")
+
+    if args.save_plots and args.show_plots:
+        raise RuntimeError(
+            "⚠️ Warning: Both --save-plots and --show-plots specified. Plots will be saved and shown."
+        )
+    if not args.save_plots and not args.show_plots:
+        print(
+            "⚠️ Warning: Neither --save-plots nor --show-plots specified. Force show_plots."
+        )
+        args.show_plots = True
+
     # Check if files exist when specified
     if args.reference_csv:
         try:
-            pd.read_csv(args.reference_csv)
+            pd.read_csv(args.reference_csv, sep=None, engine="python")
             print(f"✓ Reference CSV loaded: {args.reference_csv}")
         except FileNotFoundError:
             print(f"❌ Reference CSV file not found: {args.reference_csv}")
@@ -384,7 +480,7 @@ def main():
     # Check if files exist when specified
     if args.voltage_csv:
         try:
-            pd.read_csv(args.voltage_csv)
+            pd.read_csv(args.voltage_csv, sep=None, engine="python")
             print(f"✓ Input Voltage CSV loaded: {args.voltage_csv}")
         except FileNotFoundError:
             print(f"❌ Input voltage CSV file not found: {args.voltage_csv}")
@@ -395,7 +491,7 @@ def main():
 
     if args.resistance_csv:
         try:
-            pd.read_csv(args.resistance_csv)
+            pd.read_csv(args.resistance_csv, sep=None, engine="python")
             print(f"✓ Resistance CSV loaded: {args.resistance_csv}")
         except FileNotFoundError:
             print(f"❌ Resistance CSV file not found: {args.resistance_csv}")
@@ -406,7 +502,7 @@ def main():
 
     if args.experimental_csv:
         try:
-            pd.read_csv(args.experimental_csv)
+            pd.read_csv(args.experimental_csv, sep=None, engine="python")
             print(f"✓ Experimental CSV loaded: {args.experimental_csv}")
         except FileNotFoundError:
             print(f"❌ Experimental CSV file not found: {args.experimental_csv}")
@@ -416,13 +512,12 @@ def main():
             sys.exit(1)
 
     # Run simulation
-    try:
-        sol, circuit, post_data = run_simulation(args)
-        print("\n✓ Simulation completed successfully!")
+    sol, circuit, post_data = run_simulation(args)
+    print("\n✓ Simulation completed successfully!")
 
-    except Exception as e:
-        print(f"\n❌ Simulation failed: {e}")
-        sys.exit(1)
+    if args.wd is not None:
+        os.chdir(pwd)
+        print(f"Returned to original directory: {pwd}")
 
 
 if __name__ == "__main__":

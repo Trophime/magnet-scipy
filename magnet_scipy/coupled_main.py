@@ -23,12 +23,7 @@ from .coupled_plotting import (
     save_coupled_results,
 )
 from .pid_controller import create_adaptive_pid_controller
-
-
-class fake_sol:
-    def __init__(self, t, y):
-        self.t = t
-        self.y = y
+from .utils import fake_sol
 
 
 def load_circuit_configuration(config_file: str) -> List[RLCircuitPID]:
@@ -111,7 +106,7 @@ def run_coupled_simulation(args):
 
     experimental_data = {}
     if args.experimental_csv:
-        exp_files = args.experimental_csv.split(",")
+        exp_files = args.experimental_csv
         if len(exp_files) != coupled_system.n_circuits:
             raise ValueError(
                 f"Number of experimental files ({len(exp_files)}) does not match number of circuits ({coupled_system.n_circuits})."
@@ -120,7 +115,7 @@ def run_coupled_simulation(args):
             circuit_id = coupled_system.circuits[i].circuit_id
             experimental_data[circuit_id] = exp_file
             try:
-                exp_data = pd.read_csv(exp_file)
+                exp_data = pd.read_csv(exp_file, sep=None, engine="python")
 
                 # Validate required columns
                 if "time" not in exp_data.columns or exp_key not in exp_data.columns:
@@ -163,6 +158,7 @@ def run_coupled_simulation(args):
             f"Initial voltage: {[circuit.input_voltage(t0) for circuit in coupled_system.circuits]} V at t={t0} s"
         )
         y0 = np.array(i0)
+        print("y0:", y0, type(y0))
 
         t_span = (t0, t1)
         sol = solve_ivp(
@@ -211,16 +207,16 @@ def run_coupled_simulation(args):
                 circuit_id = circuit.circuit_id
                 if circuit_id in experimental_data:
                     exp_file = experimental_data[circuit_id]
-                    data = pd.read_csv(exp_file)
+                    data = pd.read_csv(exp_file, sep=None, engine="python")
 
                     v0.append(np.interp(t0, data["time"], data["voltage"]))
             print(f"init exp: {v0} V at t={t0:.3f} s")
 
         # merge all references
-        merged_ref = pd.read_csv(reference_csvs[0])
+        merged_ref = pd.read_csv(reference_csvs[0], sep=None, engine="python")
         merged_ref = merged_ref.rename(columns={"current": "current1"})
         for n in range(1, len(reference_csvs) - 1):
-            df = pd.read_csv(reference_csvs[n])
+            df = pd.read_csv(reference_csvs[n], sep=None, engine="python")
             df = df.rename(columns={"current": f"current{n+1}"})
             merged_ref = pd.merge(merged_ref, df, on="time", how="outer").sort_values(
                 "time"
@@ -374,7 +370,7 @@ def main():
     # TODO make experimental_csv a list
     parser.add_argument(
         "--experimental_csv",
-        nargs="?",
+        nargs="*",
         type=str,
         help="Path to CSV file with experimental current (columns: time, input) or voltage data (columns: time, voltage) for comparison ",
     )
@@ -458,7 +454,7 @@ def main():
     if args.config_file:
         try:
             with open(args.config_file, "r") as f:
-                config = json.load(f)
+                json.load(f)
             print(f"✓ Configuration file loaded: {args.config_file}")
         except FileNotFoundError:
             print(f"✗ Configuration file not found: {args.config_file}")
@@ -469,7 +465,7 @@ def main():
 
     # Check if experiments file exists
     if args.experimental_csv:
-        for exp_file in args.experimental_csv.split(","):
+        for exp_file in args.experimental_csv:
             try:
                 with open(exp_file, "r") as f:
                     pass

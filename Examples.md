@@ -47,9 +47,10 @@ with
 
 ```bash
 python -m magnet_scipy.main \
-    --experimental_csv examples/M19/M19_Overview_240208-0941_voltage.csv \
-    --reference_csv examples/M19/M19_Overview_240208-0941-Courants_Alimentations_Référence_GR2.csv \
-    --resistance_csv examples/M19/Rtot_M9Bitters_18MW.csv \
+    --wd examples/M19/ \
+    --experimental_csv M19_Overview_240208-0941_voltage.csv \
+    --reference_csv M19_Overview_240208-0941-Courants_Alimentations_Référence_GR2.csv \
+    --resistance_csv Rtot_M9Bitters_18MW.csv \
     --inductance 0.01254 \
     --temperature 12.2 \
     --value_start 200 \
@@ -136,6 +137,11 @@ python -m magnet_diffrax.main \
 ```
 
 # M19 test case
+
+```
+"M9": {"Référence_GR1": ["UH"], "Référence_GR2": ["UB", "Ucoil15", "Ucoil16"]},
+"M10": {"Référence_GR2": ["UH"], "Référence_GR1": ["UB", "Ucoil15", "Ucoil16"]},
+```
 
 ## config Alim
 

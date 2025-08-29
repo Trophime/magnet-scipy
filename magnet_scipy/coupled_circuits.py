@@ -79,11 +79,16 @@ class CoupledRLCircuitsPID:
         """Validate the mutual inductance matrix"""
         # Check symmetry
         if not np.allclose(self.M, self.M.T):
-            print("Warning: Mutual inductance matrix is not symmetric")
+            raise RuntimeError("Mutual inductance matrix is not symmetric")
 
         # Check diagonal is zero
-        if not np.allclose(np.diag(self.M), 0.0):
-            print("Warning: Mutual inductance matrix has non-zero diagonal elements")
+        if np.allclose(np.diag(self.M), 0.0, atol=1.0e-6):
+            raise RuntimeError("Mutual inductance matrix has zero diagonal elements")
+
+        # Validate positive definiteness (for physical realizability)
+        eigenvals = np.linalg.eigvals(self.M)
+        if np.any(eigenvals <= 0):
+            raise RuntimeError("Inductance matrix has non-positive eigenvalues. ")
 
     def get_resistance(self, circuit_idx: int, current: float) -> float:
         """Get resistance for a specific circuit"""
@@ -153,7 +158,11 @@ class CoupledRLCircuitsPID:
         try:
             di_dt = np.linalg.solve(self.M, net_voltages)
         except np.linalg.LinAlgError as e:
-            raise RuntimeError(f"Singular inductance matrix: {e}")
+            # raise RuntimeError(f"Singular inductance matrix: {e}")
+            print(
+                f"Warning: Singular inductance matrix encountered ({e}). Using pseudo-inverse."
+            )
+            di_dt = np.linalg.pinv(self.M) @ net_voltages
         return di_dt
 
     # TODO: by default make di_ref_dt: np.ndarray of dimensions ncircuits with zeros
@@ -183,13 +192,15 @@ class CoupledRLCircuitsPID:
             -(R_current + Kp) * i + Kp * i_ref + Ki * integral_error + Kd * di_ref_dt
         )
 
+        M_ = np.zeros((self.n_circuits, self.n_circuits))
+        np.fill_diagonal(M_, Kd)
+        M_ += self.M
         try:
-            M_ = np.zeros((self.n_circuits, self.n_circuits))
-            np.fill_diagonal(M_, Kd)
-            M_ += self.M
             di_dt = np.linalg.solve(M_, numerator)
         except np.linalg.LinAlgError as e:
-            raise RuntimeError(f"Singular inductance matrix: {e}")
+            # raise RuntimeError(f"Singular matrix: {e}")
+            print(f"Warning: Singular matrix encountered ({e}). Using pseudo-inverse.")
+            di_dt = np.linalg.pinv(M_) @ numerator
 
         # Integral error evolution
         error = i_ref - i

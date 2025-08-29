@@ -5,25 +5,7 @@ from typing import Dict, Tuple
 
 from .coupled_circuits import CoupledRLCircuitsPID
 from scipy import stats
-
-
-def exp_metrics(t, exp_time, data, exp_data):
-    # Calculate and display comparison metrics if time ranges overlap
-    t_min = max(float(t.min()), float(exp_time.min()))
-    t_max = min(float(t.max()), float(exp_time.max()))
-
-    if t_max > t_min:
-        # Interpolate both datasets to common time grid for comparison
-
-        common_time = np.linspace(t_min, t_max, 200)
-        computed_interp = np.interp(common_time, t, data)
-        exp_interp = np.interp(common_time, exp_time, exp_data)
-
-        # Calculate RMS difference and MAE
-        rms_diff = np.sqrt(np.mean((computed_interp - exp_interp) ** 2))
-        mae_diff = np.mean(np.abs(computed_interp - exp_interp))
-
-    return rms_diff, mae_diff
+from .utils import exp_metrics
 
 
 def prepare_coupled_post(
@@ -77,7 +59,9 @@ def prepare_coupled_post(
             print(circuit_id, ": experimental_data=", experimental_data)
 
             if experimental_data and circuit_id in experimental_data:
-                exp_data = pd.read_csv(experimental_data[circuit_id])
+                exp_data = pd.read_csv(
+                    experimental_data[circuit_id], sep=None, engine="python"
+                )
                 exp_time = exp_data["time"]
                 exp_current = exp_data["current"]
                 rms_diff, mae_diff = exp_metrics(t, exp_time, current, exp_current)
@@ -122,7 +106,9 @@ def prepare_coupled_post(
             )
 
             if experimental_data and circuit_id in experimental_data:
-                exp_data = pd.read_csv(experimental_data[circuit_id])
+                exp_data = pd.read_csv(
+                    experimental_data[circuit_id], sep=None, engine="python"
+                )
                 exp_time = exp_data["time"]
                 exp_values = exp_data["voltage"]
                 rms_diff, mae_diff = exp_metrics(t, exp_time, voltage, exp_values)
@@ -173,7 +159,7 @@ def prepare_coupled_post(
             ),
         }
 
-        print(circuit_id)
+        print(f"\n{circuit_id} stats:")
         print("current stats: ", stats.describe(current))
         print("voltage stats: ", stats.describe(voltage))
         if temperature_over_time is not None:
@@ -219,7 +205,9 @@ def plot_coupled_vresults(
             linestyle="-",
         )
         if experimental_data and circuit_id in experimental_data:
-            exp_data = pd.read_csv(experimental_data[circuit_id])
+            exp_data = pd.read_csv(
+                experimental_data[circuit_id], sep=None, engine="python"
+            )
             exp_time = exp_data["time"]
             exp_current = exp_data["current"]
             ax.plot(
@@ -400,7 +388,9 @@ def plot_coupled_results(
         data = results[circuit_id]
         ax.plot(t, data["voltage"], color=colors[i], linewidth=2, label=circuit_id)
         if experimental_data and circuit_id in experimental_data:
-            exp_data = pd.read_csv(experimental_data[circuit_id])
+            exp_data = pd.read_csv(
+                experimental_data[circuit_id], sep=None, engine="python"
+            )
             exp_time = exp_data["time"]
             exp_current = exp_data["voltage"]
             ax.plot(
@@ -422,23 +412,43 @@ def plot_coupled_results(
     # 4. Variable resistance
     ax = axes[3]
     # Adding Twin Axes to plot using temperature - if not constant
-    ax2 = ax.twinx()
+    use_variable_temperature = (
+        True
+        if all(circuit.use_variable_temperature for circuit in coupled_system)
+        else False
+    )
+    if use_variable_temperature:
+        ax2 = ax.twinx()
     for i, circuit_id in enumerate(circuit_ids):
         data = results[circuit_id]
-        circuit = coupled_system.circuits[circuit_id]
+        circuit = coupled_system.circuits[i]
         if "temperature" in data and data["temperature"] is not None:
             label = f"{circuit_id}"  # change label if temp is contant
         else:
             label = f"{circuit_id} (Tin={circuit.temperature}°C)"
 
         ax.plot(t, data["resistance"], color=colors[i], linewidth=2, label=label)
-        ax.plot(t, data["resistance"], color=colors[i], linewidth=2, label=label)
+        # TODO add temperature if available in right yaxis - if not constant
+        if use_variable_temperature:
+            label = f"{circuit_id} Tin"
+            ax2.plot(
+                t,
+                data["temperature"],
+                color=colors[i],
+                marker="o",
+                markersize=4,
+                markevery=5,
+                linestyle="",
+                label=label,
+                alpha=0.5,
+            )
 
     # if there is at least a circuit with a non constant temperature
-    ax2.set_ylabel("Tin (°C)")
-    ax2.tick_params(axis="y")
-    ax2.grid(False)
-    # ax2.legend()
+    if use_variable_temperature:
+        ax2.set_ylabel("Tin (°C)")
+        ax2.tick_params(axis="y")
+        ax2.grid(False)
+        # ax2.legend()
 
     # ax.set_xlabel("Time (s)")
     ax.set_ylabel("Resistance (Ω)")
