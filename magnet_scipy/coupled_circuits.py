@@ -81,9 +81,9 @@ class CoupledRLCircuitsPID:
         if not np.allclose(self.M, self.M.T):
             raise RuntimeError("Mutual inductance matrix is not symmetric")
 
-        # Check diagonal is zero
-        if np.allclose(np.diag(self.M), 0.0, atol=1.0e-6):
-            raise RuntimeError("Mutual inductance matrix has zero diagonal elements")
+        # Check diagonal contains positive self-inductances (NOT zero!)
+        if np.any(np.diag(self.M) <= 0):
+            raise RuntimeError("Inductance matrix has non-positive diagonal elements")
 
         # Validate positive definiteness (for physical realizability)
         eigenvals = np.linalg.eigvals(self.M)
@@ -142,12 +142,17 @@ class CoupledRLCircuitsPID:
         """
         RL circuit ODE
         """
+        print(f"DEBUG: t={t:.3f}, y={y}, y.shape={y.shape}")
 
         i = y  # Current is an array of ncircuit dimension
 
         # Get voltage from CSV data
+        tutu = ""
         if u is None:
-            u = np.array([circuit.input_voltage(t) for circuit in self.circuits])
+            voltages = [circuit.input_voltage(t) for circuit in self.circuits]
+            u = np.array(voltages)
+            tutu = " ****"
+        print(f"DEBUG: voltages u={u} {tutu}")
 
         # Get current-dependent resistance
         temperatures = [circuit.get_temperature(t) for circuit in self.circuits]
