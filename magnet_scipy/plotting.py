@@ -311,6 +311,40 @@ def plot_results(
         alpha=0.7,
     )
 
+    # Color background by current region
+    prev_region = None
+    region_colors = {
+        "Low": "lightgreen",
+        "Medium": "lightyellow",
+        "High": "lightcoral",
+        "low": "lightgreen",
+        "medium": "lightyellow",
+        "high": "lightcoral",
+    }
+
+    current_regions = data["regions"]
+    for i, region in enumerate(
+        current_regions[::100]
+    ):  # Sample every 100 points for performance
+        if region != prev_region:
+            region_start = t[i * 100] if i * 100 < len(t) else t[-1]
+            # Find next region change
+            region_end = t[-1]
+            for j in range(i + 1, len(current_regions[::100])):
+                if current_regions[j * 100] != region and j * 100 < len(t):
+                    region_end = t[j * 100]
+                    break
+
+            color_key = region.lower() if region.lower() in region_colors else region
+            ax.axvspan(
+                region_start,
+                region_end,
+                alpha=0.2,
+                color=region_colors.get(color_key, "lightgray"),
+                label=f"{region} Current" if prev_region != region else "",
+            )
+            prev_region = region
+
     # ax.set_xlabel("Time (s)")
     ax.set_ylabel("Current (A)")
     ax.set_title("Current Tracking - All Circuits")
@@ -345,6 +379,16 @@ def plot_results(
             linestyle=":",
             alpha=0.7,
         )
+        # Add comparison metrics to the plot
+        ax.text(
+            0.02,
+            0.02,
+            f"{circuit_id} RMS Diff: {data['rms_diff']:.2f} V\n{circuit_id} MAE Diff: {data['mae_diff']:.2f} V",
+            transform=ax.transAxes,
+            verticalalignment="top",
+            bbox=dict(boxstyle="round,pad=0.3", facecolor="wheat", alpha=0.8),
+        )
+
 
     # ax.set_xlabel("Time (s)")
     ax.set_ylabel("Voltage (V)")
