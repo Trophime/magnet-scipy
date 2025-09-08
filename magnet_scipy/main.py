@@ -117,7 +117,7 @@ def run_simulation(args):
             lambda t, current: circuit.voltage_vector_field(t, current),
             t_span,
             y0,
-            method="RK45",
+            method=args.method,
             dense_output=True,
             rtol=1e-6,
             atol=1e-9,
@@ -192,7 +192,7 @@ def run_simulation(args):
                 lambda t, current: circuit.vector_field(t, current, di_ref_dt=di_refdt),
                 t_span,
                 y0,
-                method="RK45",
+                method=args.method,
                 dense_output=True,
                 rtol=1e-6,
                 atol=1e-9,
@@ -364,6 +364,11 @@ def main():
         "--time_step", type=float, default=0.001, help="Simulation time step in seconds"
     )
 
+    parser.add_argument(
+        "--method", type=str, choices=["RK45", "RK23", "DOP853", 'Radau', 'BDF', "LSODA"], 
+        default='RK45', help="Select method used to solve ODE"
+    )
+
     # PID parameters (optional custom settings)
     parser.add_argument(
         "--custom_pid",
@@ -445,7 +450,7 @@ def main():
 
     # Parse arguments
     args = parser.parse_args()
-    # print(f"args: {args}")
+    print(f"args: {args}")
 
     if args.wd is not None:
         import os

@@ -165,7 +165,7 @@ def run_coupled_simulation(args):
             lambda t, current: coupled_system.voltage_vector_field(t, current),
             t_span,
             y0,
-            method="RK45",
+            method=args.method,
             dense_output=True,
             rtol=1e-6,
             atol=1e-9,
@@ -264,7 +264,7 @@ def run_coupled_simulation(args):
                 ),
                 t_span,
                 y0,
-                method="RK45",
+                method=args.method,
                 dense_output=True,
                 rtol=1e-6,
                 atol=1e-9,
@@ -395,6 +395,11 @@ def main():
         "--time_step", type=float, default=0.01, help="Simulation time step in seconds"
     )
 
+    parser.add_argument(
+        "--method", type=str, choices=["RK45", "RK23", "DOP853", 'Radau', 'BDF', "LSODA"], 
+        default='RK45', help="Select method used to solve ODE"
+    )
+    
     # Output options
     parser.add_argument(
         "--show_plots",
