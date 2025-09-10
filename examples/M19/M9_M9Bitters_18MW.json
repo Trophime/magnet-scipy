@@ -1,0 +1,14 @@
+{
+  "circuit_id": "M9Bitters_18MW",
+  "temperature": 12.2,
+  "inductance": 0.01254,
+  "resistance_csv": "Rtot_M9Bitters_18MW.csv",
+  "voltage_csv": "M19_Overview_240208-0941-Tensions_Aimant_ALL_externes.csv",
+  "experiment_data": [
+    {
+      "type": "current",
+      "key": "current",
+      "file": "M19_Overview_240208-0941_current.csv"
+    }
+  ]
+}

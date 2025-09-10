@@ -1,0 +1,60 @@
+{
+    "name": "M9_xxx",
+    "circuits": [
+    {
+      "circuit_id": "M9Bitters_18MW",
+      "temperature": 12.2,
+      "inductance": 0.01254,
+      "resistance_csv": "Rtot_M9Bitters_18MW.csv",
+      "reference_csv": "M19_Overview_240208-0941-Courants_Alimentations_Référence_GR2.csv",
+      "pid_params": {
+        "Kp_low": 5.0,
+        "Ki_low": 0.2,
+        "Kd_low": 0,
+        "Kp_medium": 12.0,
+        "Ki_medium": 1.0,
+        "Kd_medium": 0,
+        "Kp_high": 12.0,
+        "Ki_high": 1.0,
+        "Kd_high": 0.0,
+        "low_threshold": 60,
+        "high_threshold": 800
+      },
+      "experiment_data": [
+        {
+          "type": "voltage",
+          "key": "voltage",
+          "file": "M19_Overview_240208-0941_voltage.csv"
+        }
+      ]
+    },
+    {
+      "circuit_id": "M9Bitters_18MW-clone",
+      "temperature": 12.2,
+      "inductance": 0.01254,
+      "resistance_csv": "Rtot_M9Bitters_18MW.csv",
+      "reference_csv": "M19_Overview_240208-0941-Courants_Alimentations_Référence_GR2.csv",
+      "pid_params": {
+        "Kp_low": 5.0,
+        "Ki_low": 0.2,
+        "Kd_low": 0,
+        "Kp_medium": 12.0,
+        "Ki_medium": 1.0,
+        "Kd_medium": 0,
+        "Kp_high": 12.0,
+        "Ki_high": 1.0,
+        "Kd_high": 0.0,
+        "low_threshold": 60,
+        "high_threshold": 800
+      },
+      "experiment_data": [
+        {
+          "type": "voltage",
+          "key": "voltage",
+          "file": "M19_Overview_240208-0941_voltage.csv"
+        }
+      ]
+    }
+  ],
+  "mutual_inductances": [0]
+}
