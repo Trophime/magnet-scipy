@@ -194,7 +194,7 @@ class CoupledRLCircuitsPID:
         """
         i = y[: self.n_circuits]
         integral_error = y[self.n_circuits :]
-        print(f"DEBUG: currents i={i} integram_error={integral_error}")
+        # print(f"DEBUG: currents i={i} integram_error={integral_error}")
 
         # Get parameters
         temperatures = [circuit.get_temperature(t) for circuit in self.circuits]

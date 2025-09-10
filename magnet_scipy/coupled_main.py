@@ -1,21 +1,19 @@
 #!/usr/bin/env python3
 """
-Coupled RL Circuits PID Control System
-
-Command-line interface for running coupled RL circuit simulations with
-independent adaptive PID controllers and magnetic coupling.
+Updated coupled_main.py using Strategy Pattern
+Simplified and cleaner simulation logic
 """
 
+import os
 import argparse
 import sys
 import json
 import numpy as np
-import pandas as pd
-from scipy.integrate import solve_ivp
 from typing import List
 
 from .coupled_circuits import CoupledRLCircuitsPID
 from .rlcircuitpid import RLCircuitPID
+from .simulation_strategies import SimulationRunner, SimulationParameters
 from .coupled_plotting import (
     prepare_coupled_post,
     plot_coupled_vresults,
@@ -26,8 +24,122 @@ from .pid_controller import create_adaptive_pid_controller
 from .utils import fake_sol
 
 
+def run_coupled_simulation_with_strategy(args):
+    """
+    Simplified simulation runner using strategy pattern
+    Replaces the complex conditional logic
+    """
+    
+    print("\n=== Coupled RL Circuits PID Simulation ===")
+    
+    # Load system configuration (unchanged)
+    if args.config_file:
+        print(f"Loading configuration from: {args.config_file}")
+        circuits, mutual_inductances = load_circuit_configuration(args.config_file)
+    else:
+        raise RuntimeError("Configuration file must be provided with --config-file")
+    
+    # Create coupled system (unchanged)
+    if mutual_inductances is not None:
+        coupled_system = CoupledRLCircuitsPID(
+            circuits, mutual_inductances=mutual_inductances
+        )
+    else:
+        raise RuntimeError(
+            "Mutual inductance matrix must be provided in configuration file."
+        )
+    
+    coupled_system.print_configuration()
+    
+    # Validate initial values
+    if len(args.value_start) != coupled_system.n_circuits:
+        raise ValueError(
+            f"Number of initial values ({len(args.value_start)}) must match number of circuits ({coupled_system.n_circuits})"
+        )
+    
+    # Create simulation parameters
+    params = SimulationParameters(
+        t_start=args.time_start,
+        t_end=args.time_end,
+        dt=args.time_step,
+        method=args.method,
+        initial_values=args.value_start
+    )
+    
+    print(f"\nSimulation parameters:")
+    print(f"  Time span: {params.t_start} to {params.t_end} seconds")
+    print(f"  Time step: {params.dt} seconds")
+    print(f"  Method: {params.method}")
+    print(f"  Initial values: {params.initial_values}")
+    
+    # Run simulation using strategy pattern
+    runner = SimulationRunner()
+    
+    try:
+        result = runner.run_simulation(coupled_system, params)
+        print(f"✓ Simulation completed using {result.strategy_type} strategy")
+        
+        # Convert result back to expected format for plotting
+        sol = convert_result_to_sol_format(result)
+        
+        # Determine mode for post-processing (temporary compatibility)
+        mode = "regular" if result.strategy_type == "voltage_input" else "cde"
+        
+        # Post-process results
+        print("Processing results...")
+        t, results = prepare_coupled_post(sol, coupled_system, mode)
+        
+        # Generate plots
+        print("Generating plots...")
+        if result.strategy_type == "voltage_input":
+            plot_coupled_vresults(
+                sol,
+                coupled_system,
+                t,
+                results,
+                save_path=args.save_plots,
+                show=args.show_plots,
+            )
+        else:
+            plot_coupled_results(
+                sol,
+                coupled_system,
+                t,
+                results,
+                save_path=args.save_plots,
+                show=args.show_plots,
+            )
+        
+        # Save results
+        output_filename = args.config_file.replace(".json", ".res")
+        if args.save_results:
+            output_filename = args.save_results
+        save_coupled_results(coupled_system, t, results, output_filename)
+        
+        return sol, coupled_system, t, results
+        
+    except Exception as e:
+        print(f"✗ Simulation failed: {e}")
+        raise
+
+
+def convert_result_to_sol_format(result):
+    """
+    Convert SimulationResult back to scipy solve_ivp format for compatibility
+    This is temporary until plotting functions are updated
+    """
+    class FakeSol:
+        def __init__(self, t, y):
+            self.t = t
+            self.y = y
+            self.success = True
+            self.message = "Strategy simulation completed"
+    
+    return FakeSol(result.time, result.solution)
+
+
 def load_circuit_configuration(config_file: str) -> List[RLCircuitPID]:
-    """Load circuit configuration from JSON file"""
+    """Load circuit configuration from JSON file (unchanged)"""
     try:
         with open(config_file, "r") as f:
             config_data = json.load(f)
@@ -67,274 +179,26 @@ def load_circuit_configuration(config_file: str) -> List[RLCircuitPID]:
         sys.exit(1)
 
 
-def run_coupled_simulation(args):
-    """Run the coupled circuits simulation"""
-
-    print("\n=== Coupled RL Circuits PID Simulation ===")
-
-    # Load or create circuit configuration
-    if args.config_file:
-        print(f"Loading configuration from: {args.config_file}")
-        circuits, mutual_inductances = load_circuit_configuration(args.config_file)
-    else:
-        raise RuntimeError("Configuration file must be provided with --config-file")
-
-    # Create coupled system
-    if mutual_inductances is not None:
-        coupled_system = CoupledRLCircuitsPID(
-            circuits, mutual_inductances=mutual_inductances
-        )
-    else:
-        raise RuntimeError(
-            "Mutual inductance matrix must be provided in configuration file."
-        )
-
-    for circuit in coupled_system.circuits:
-        circuit.print_configuration()
-
-    # Set experimental data if provided (for backward compatibility)
-    voltage_csvs = [circuit.voltage_csv for circuit in coupled_system.circuits]
-    reference_csvs = [circuit.reference_csv for circuit in coupled_system.circuits]
-    print(f"Voltage CSVs: {voltage_csvs}")
-    print(f"Reference CSVs: {reference_csvs}")
-
-    key = "voltage"
-    if all(v is None for v in voltage_csvs):
-        key = "current"
-    print(f"Using {key} control based on available CSV files.")
-
-    # Print configuration
-    coupled_system.print_configuration()
-    if len(args.value_start) != coupled_system.n_circuits:
-        raise ValueError(
-            f"Number of initial values ({len(args.value_start)}) must match number of circuits ({coupled_system.n_circuits})"
-        )
-
-    # Time parameters
-    t0, t1 = args.time_start, args.time_end
-    dt = args.time_step
-
-    mode = "regular"
-    if key == "current":
-        mode = "cde"
-
-    print(f"\nRunning simulation mode={mode}...")
-    print(f"Time span: {t0} to {t1} seconds")
-    print(f"Time step: {dt} seconds")
-
-    if mode == "regular":
-        print(f"\nUsing input voltage CSV: {voltage_csvs}")
-
-        i0 = args.value_start
-        print(f"Initial current: {i0} A at t={t0} s")
-        print(
-            f"Initial voltage: {[circuit.input_voltage(t0) for circuit in coupled_system.circuits]} V at t={t0} s"
-        )
-        y0 = np.array(i0)
-        print("y0:", y0, type(y0))
-
-        t_span = (t0, t1)
-        sol = solve_ivp(
-            lambda t, current: coupled_system.voltage_vector_field(t, current),
-            t_span,
-            y0,
-            method=args.method,
-            dense_output=True,
-            rtol=1e-6,
-            atol=1e-9,
-            max_step=dt,
-        )
-
-        # Run simulation
-        print("✓ Simulation completed")
-
-        # Post-process results
-        print("Processing results...")
-        t, results = prepare_coupled_post(sol, coupled_system, mode)
-
-        print("Generating plots...")
-        plot_coupled_vresults(
-            sol,
-            coupled_system,
-            t,
-            results,
-            save_path=args.save_plots,
-            show=args.show_plots,
-        )
-
-    else:
-
-        # Store results
-        all_t = []
-        all_y = []
-
-        print(f"\nUsing CDE for PID control: {reference_csvs}")
-        i0 = np.array(args.value_start)
-        print(f"\nInitial current: {i0} A at t={t0} s")
-        i0_ref = np.array(coupled_system.get_reference_currents(t0))
-        print(f"init ref: {i0_ref} A at t={t0:.3f} s")
-        """
-        v0 = []
-        for circuit in coupled_system.circuits:
-            if circuit.has_experimental_data(data_type="voltage", key="voltage"):
-                data = circuit.get_experimental_data(
-                    data_type="voltage", key="voltage", t=t0
-                )
-                v0.append(data)
-            print(f"init exp: {v0} V at t={t0:.3f} s")
-        """
-
-        # merge all references
-        merged_ref = pd.read_csv(reference_csvs[0], sep=None, engine="python")
-        merged_ref = merged_ref.rename(columns={"current": "current1"})
-        for n in range(1, len(reference_csvs) - 1):
-            df = pd.read_csv(reference_csvs[n], sep=None, engine="python")
-            df = df.rename(columns={"current": f"current{n+1}"})
-            merged_ref = pd.merge(merged_ref, df, on="time", how="outer").sort_values(
-                "time"
-            )
-
-            # Interpolate missing values
-            merged_ref[f"value{n}"] = merged_ref[f"value{n}"].interpolate(
-                method="linear"
-            )
-            merged_ref[f"value{n+1}"] = merged_ref[f"value{n+1}"].interpolate(
-                method="linear"
-            )
-
-        closest_index = np.argmin(np.abs(merged_ref["time"].to_numpy() - t0))
-        # shall check if circuit.time_data[closest_index] is greater than t0
-        error = i0_ref - i0
-        print(
-            f"t0: {t0}, closest_index={closest_index}, time_data={merged_ref['time'].iloc[closest_index]}, error={error}"
-        )
-        print(
-            f"\nPID controller: run pid for each sequence of reference_current ({merged_ref.shape[0]} sequences)..."
-        )
-        for n in range(closest_index + 1, merged_ref.shape[0] - 1):
-            t_actual = float(merged_ref["time"].iloc[n])
-            t_previous = float(merged_ref["time"].iloc[n - 1])
-            print(
-                f'n={n}, t={t_actual:.3f} s, ref={merged_ref.filter(regex="current*").iloc[n].values} A',
-                end=", ",
-            )
-            di_refdt = (
-                np.array(coupled_system.get_reference_currents(t_actual))
-                - np.array(coupled_system.get_reference_currents(t_previous))
-            ) / (t_actual - t_previous)
-            print(f"di_refdt={di_refdt} A/s", end=", ")
-            t_span = (
-                float(t_previous),
-                float(t_actual),
-            )
-            print(f"t_span: {t_span}", end=", ", flush=True)
-            y0 = np.concatenate([i0, error])
-            print(f"y0: {y0}", end=": ", flush=True)
-            sol = solve_ivp(
-                lambda t, current: coupled_system.vector_field(
-                    t, current, di_ref_dt=di_refdt
-                ),
-                t_span,
-                y0,
-                method=args.method,
-                dense_output=True,
-                rtol=1e-6,
-                atol=1e-9,
-                max_step=dt,
-            )
-
-            currents = sol.y[: coupled_system.n_circuits]
-            integral_error = sol.y[coupled_system.n_circuits :]
-            print(f"tfinal={float(sol.t[-1])} s", end=",", flush=True)
-            print(f"i1={currents[:, -1]} A", end=", ", flush=True)
-            print(f"integral_error1={integral_error[:, -1]} A.s", end=", ", flush=True)
-            print("✓ Simulation completed")
-
-            # Store the time points and solution
-            all_t.append(sol.t)
-            all_y.append(sol.y)
-            # Handling Overlaps: If your intervals overlap or you want to avoid duplicate points at boundaries, you can slice appropriately:
-            # all_t.append(sol.t[:-1] if n < len(circuit.time_data)-1 else sol.t)  # Remove last point except for final interval
-            # all_y.append(sol.y[:, :-1] if n < len(circuit.time_data)-1 else sol.y)            # update for next iteration
-
-            # print("Postprocessing for plots...")
-            if args.debug:
-                # Post-process results
-                print("Processing results...")
-                t, results = prepare_coupled_post(sol, coupled_system, mode)
-
-                print("Generating plots...")
-                plot_coupled_results(
-                    sol,
-                    coupled_system,
-                    t,
-                    results,
-                    save_path=None,
-                    show=True,
-                )
-
-            # update for next iteration
-            i0 = currents[:, -1]
-            error = integral_error[:, -1]
-
-        # Run simulation
-        print("✓ Simulation completed")
-
-        # Concatenate all results
-        t_global = np.concatenate(all_t)
-        y_global = np.concatenate(all_y, axis=1)
-
-        print(f"Total time points: {len(t_global)}")
-        u, c = np.unique(t_global, return_counts=True)
-        duplicates = u[c > 1]
-        if len(duplicates) > 0:
-            print(f"Warning: Duplicate time points found: {duplicates}")
-
-        # Post-process results
-        print("Processing results...")
-        t, results = prepare_coupled_post(
-            fake_sol(t_global, y_global), coupled_system, mode
-        )
-
-        print("Generating plots...")
-        plot_coupled_results(
-            sol,
-            coupled_system,
-            t,
-            results,
-            save_path=args.save_plots,
-            show=args.show_plots,
-        )
-
-    # Save results if requested
-    output_filename = args.config_file.replace(".json", ".res")
-    if args.save_results:
-        print("save result to {args.save_results}")
-        output_filename = args.save_results
-    save_coupled_results(coupled_system, t, results, output_filename)
-
-    return sol, coupled_system, t, results
-
-
 def main():
-    """Main function with argument parsing"""
-
+    """Main function with argument parsing (simplified)"""
+    
     parser = argparse.ArgumentParser(
         description="Coupled RL Circuits PID Control Simulation",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
-    # Configuration options
     parser.add_argument(
-        "--version",
-        action="version",
-        version="Coupled RL Circuits PID Simulation 1.0",
+        "--wd", 
+        type=str, 
+        help="Working directory"
     )
-    parser.add_argument("--wd", type=str, help="Working directory")
+
+    # Configuration options
     parser.add_argument(
         "--config-file",
         type=str,
-        help="Path to JSON configuration file with circuit definitions (supports experimental_data field)",
+        required=True,
+        help="Path to JSON configuration file with circuit definitions"
     )
 
     # Simulation parameters
@@ -342,6 +206,7 @@ def main():
         "--value_start",
         nargs="+",
         type=float,
+        default=[0.0],
         help="Current values at start time in Ampere",
     )
 
@@ -373,103 +238,51 @@ def main():
     )
 
     parser.add_argument(
-        "--show_analytics",
-        "-a",
-        action="store_true",
-        help="Show detailed analytics of simulation results",
-    )
-
-    parser.add_argument(
         "--save_results",
         type=str,
         help="Save results to specified file (e.g., results.npz)",
     )
+    
     parser.add_argument(
         "--save_plots",
         type=str,
         help="Save plots to specified file (e.g., plots.png)",
     )
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="Activate debug mode",
-    )
 
     # Parse arguments
     args = parser.parse_args()
-    print(f"args: {args}")
-
-    if args.value_start is None:
-        args.value_start = [0.0]
-
-    if args.wd is not None:
-        import os
-
-        pwd = os.getcwd()
-        os.chdir(args.wd)
-        print(f"Working directory set to: {args.wd} (pwd={pwd})")
-    print(f"✓ Working directory: {os.getcwd()}")
-
-    if args.save_plots and args.show_plots:
-        raise RuntimeError(
-            "⚠️ Warning: Both --save-plots and --show-plots specified. Plots will be saved and shown."
-        )
+    
+    # Validate arguments
     if not args.save_plots and not args.show_plots:
-        print(
-            "⚠️ Warning: Neither --save-plots nor --show-plots specified. Force show_plots."
-        )
+        print("⚠️ Warning: Neither --save-plots nor --show-plots specified. Forcing show_plots.")
         args.show_plots = True
 
-    # Validate configuration file if provided
-    if args.config_file:
-        try:
-            with open(args.config_file, "r") as f:
-                config = json.load(f)
-            print(f"✓ Configuration file loaded: {args.config_file}")
-
-            # Check for experimental_data in circuits
-            exp_data_count = 0
-            for circuit_config in config.get("circuits", []):
-                if "experimental_data" in circuit_config:
-                    exp_data_count += len(circuit_config["experimental_data"])
-
-            if exp_data_count > 0:
-                print(
-                    f"✓ Found {exp_data_count} experimental data entries in configuration"
-                )
-
-        except FileNotFoundError:
-            print(f"✗ Configuration file not found: {args.config_file}")
-            sys.exit(1)
-        except Exception as e:
-            print(f"✗ Error reading configuration file: {e}")
-            sys.exit(1)
+    # Handle working directory
+    original_wd = None
+    if args.wd is not None:
+        original_wd = os.getcwd()
+        os.chdir(args.wd)
+        print(f"✓ Working directory set to: {args.wd}")
 
     # Run simulation
     try:
-        sol, coupled_system, t, results = run_coupled_simulation(args)
+        sol, coupled_system, t, results = run_coupled_simulation_with_strategy(args)
         print("\n✓ Coupled simulation completed successfully!")
         print(f"  Circuits simulated: {coupled_system.n_circuits}")
         print(f"  Time points: {len(t)}")
         print(f"  Total simulation time: {float(t[-1] - t[0]):.3f} seconds")
 
-        # Print experimental data summary
-        total_exp_data = sum(
-            len(circuit.experimental_data) for circuit in coupled_system.circuits
-        )
-        if total_exp_data > 0:
-            print(f"  Experimental data entries used: {total_exp_data}")
-
     except Exception as e:
         print(f"\n✗ Simulation failed: {e}")
         import traceback
-
         traceback.print_exc()
         sys.exit(1)
-
-    if args.wd is not None:
-        os.chdir(pwd)
-        print(f"Returned to original directory: {pwd}")
+        
+    finally:
+        # Restore original working directory
+        if original_wd is not None:
+            os.chdir(original_wd)
+            print(f"✓ Returned to original directory: {original_wd}")
 
 
 if __name__ == "__main__":
