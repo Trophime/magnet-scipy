@@ -16,7 +16,7 @@ python -m magnet_scipy.main \
   --time_start 0 --time_end 6000  --time_step 0.01
 ```
 
-* using `couple_main`:
+* using `coupled_main`:
 
 ```bash
 python -m magnet_scipy.coupled_main \

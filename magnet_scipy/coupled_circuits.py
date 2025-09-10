@@ -93,7 +93,7 @@ class CoupledRLCircuitsPID:
     def get_resistance(self, circuit_idx: int, current: float) -> float:
         """Get resistance for a specific circuit"""
         circuit = self.circuits[circuit_idx]
-        return circuit.get_resistance(current)
+        return circuit.get_resistance(abs(current))
 
     def get_reference_current(self, circuit_idx: int, t: float) -> float:
         """Get reference current for a specific circuit"""
@@ -104,14 +104,15 @@ class CoupledRLCircuitsPID:
         self, currents: List[float], temperatures: List[float] = None
     ) -> List[float]:
         """Get resistance for a specific circuit"""
+        # print(f"get_resistances: currents={currents}, temperatures={temperatures}")
         if temperatures is not None:
             return [
-                circuit.get_resistance(currents[i], temperatures[i])
+                circuit.get_resistance(abs(currents[i]), temperatures[i])
                 for i, circuit in enumerate(self.circuits)
             ]
         else:
             return [
-                circuit.get_resistance(currents[i])
+                circuit.get_resistance(abs(currents[i]))
                 for i, circuit in enumerate(self.circuits)
             ]
 
@@ -142,7 +143,7 @@ class CoupledRLCircuitsPID:
         """
         RL circuit ODE
         """
-        print(f"DEBUG: t={t:.3f}, y={y}, y.shape={y.shape}")
+        # print(f"DEBUG: t={t:.3f}, y={y}, y.shape={y.shape}")
 
         i = y  # Current is an array of ncircuit dimension
 
@@ -152,12 +153,21 @@ class CoupledRLCircuitsPID:
             voltages = [circuit.input_voltage(t) for circuit in self.circuits]
             u = np.array(voltages)
             tutu = " ****"
-        print(f"DEBUG: voltages u={u} {tutu}")
+        # print(f"DEBUG: voltages u={u} {tutu}")
 
         # Get current-dependent resistance
         temperatures = [circuit.get_temperature(t) for circuit in self.circuits]
+        """
+        print(
+            f"DEBUG: temperatures={temperatures} {tutu}"
+        )
+        """
         R_current = np.array(self.get_resistances(i.tolist(), temperatures))
-        # print("R_current:", R_current, "i=", i, "temperatures=", temperatures)
+        """
+        print(
+            f"DEBUG: R_current R={R_current} {tutu}"
+        )
+        """
 
         net_voltages = u - R_current * i  # Net voltages after resistive drop
         try:
@@ -184,6 +194,7 @@ class CoupledRLCircuitsPID:
         """
         i = y[: self.n_circuits]
         integral_error = y[self.n_circuits :]
+        print(f"DEBUG: currents i={i} integram_error={integral_error}")
 
         # Get parameters
         temperatures = [circuit.get_temperature(t) for circuit in self.circuits]
@@ -354,19 +365,6 @@ class CoupledRLCircuitsPID:
     def get_coupling_matrix(self) -> np.ndarray:
         """Get the current mutual inductance matrix"""
         return np.array(self.M)
-
-    def __len__(self) -> int:
-        """Return the number of circuits"""
-        return self.n_circuits
-
-    def __getitem__(self, key):
-        """Allow indexing circuits by index or ID"""
-        if isinstance(key, int):
-            return self.get_circuit_by_index(key)
-        elif isinstance(key, str):
-            return self.get_circuit_by_id(key)
-        else:
-            raise TypeError("Key must be int (index) or str (circuit_id)")
 
     def __repr__(self) -> str:
         """String representation of the coupled system"""

@@ -1,5 +1,4 @@
 import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
 from typing import Dict, Tuple
 
@@ -12,7 +11,6 @@ def prepare_coupled_post(
     sol,
     coupled_system: CoupledRLCircuitsPID,
     mode: str = "regular",
-    experimental_data: Dict = None,
 ) -> Tuple[np.ndarray, Dict]:
     """
     Post-process results for coupled RL circuits
@@ -22,12 +20,14 @@ def prepare_coupled_post(
     t = sol.t
     n_circuits = coupled_system.n_circuits
     circuit_ids = coupled_system.circuit_ids
+    print(f"pid sol: {sol.y.shape}, len(t)={t.shape}, n_circuits={n_circuits}")
 
     # Reshape solution: (time_steps, n_circuits, 3)
     if mode == "regular":
-        y_reshaped = sol.y.reshape(len(t), n_circuits)
+        currents = sol.y
     else:
-        y_reshaped = sol.y.reshape(len(t), n_circuits, 2)
+        currents = sol.y[:n_circuits, :]
+        integral_errors = sol.y[n_circuits:, :]
 
     results = {}
     i_ref = None
@@ -52,25 +52,31 @@ def prepare_coupled_post(
         if circuit.use_variable_temperature:
             print("temperature=", temperature_over_time.shape)
 
+        # load experimeantal data if any
+        circuit._load_experimental_data()
+
         # Extract state variables for this circuit
         if mode == "regular":
-            current = y_reshaped[:, i]
+            current = currents[i, :]
             voltage = circuit.voltage_func(t)
-            print(circuit_id, ": experimental_data=", experimental_data)
+            print(circuit_id, ": experimental_data=", circuit.experimental_data)
 
-            if experimental_data and circuit_id in experimental_data:
-                exp_data = pd.read_csv(
-                    experimental_data[circuit_id], sep=None, engine="python"
-                )
-                exp_time = exp_data["time"]
-                exp_current = exp_data["current"]
+            if circuit.has_experimental_data(data_type="current", key="current"):
+                exp_time = circuit.experimental_functions["current_current"][
+                    "time_data"
+                ]
+                exp_current = circuit.experimental_functions["current_current"][
+                    "values_data"
+                ]
                 rms_diff, mae_diff = exp_metrics(t, exp_time, current, exp_current)
                 print(
                     f"Comparison metrics for {circuit_id}: RMS Difference = {rms_diff:.4f} A, MAE = {mae_diff:.4f} A"
                 )
+                circuit.experimental_functions["current_current"]["rms_diff"] = rms_diff
+                circuit.experimental_functions["current_current"]["mae_diff"] = mae_diff
         else:
-            current = y_reshaped[:, i, 0]
-            integral_error = y_reshaped[:, i, 1]
+            current = currents[i]
+            integral_error = integral_errors[i]
 
             # Calculate reference current
             i_ref = np.array([circuit.reference_current(t_val) for t_val in t])
@@ -105,16 +111,19 @@ def prepare_coupled_post(
                 + Kd_array * derivative_error
             )
 
-            if experimental_data and circuit_id in experimental_data:
-                exp_data = pd.read_csv(
-                    experimental_data[circuit_id], sep=None, engine="python"
-                )
-                exp_time = exp_data["time"]
-                exp_values = exp_data["voltage"]
+            if circuit.has_experimental_data(data_type="voltage", key="voltage"):
+                exp_time = circuit.experimental_functions["voltage_voltage"][
+                    "time_data"
+                ]
+                exp_values = circuit.experimental_functions["voltage_voltage"][
+                    "values_data"
+                ]
                 rms_diff, mae_diff = exp_metrics(t, exp_time, voltage, exp_values)
                 print(
                     f"Comparison metrics for {circuit_id}: RMS Difference = {rms_diff:.4f} V, MAE = {mae_diff:.4f} V"
                 )
+                circuit.experimental_functions["voltage_voltage"]["rms_diff"] = rms_diff
+                circuit.experimental_functions["voltage_voltage"]["mae_diff"] = mae_diff
 
         # Calculate variable resistance over time
         resistance_over_time = None
@@ -147,18 +156,20 @@ def prepare_coupled_post(
             "Kd": Kd_array,
             "regions": current_regions,
             "integral_error": integral_error,
-            "rms_diff": (
-                rms_diff
-                if experimental_data and circuit_id in experimental_data
-                else None
-            ),
-            "mae_diff": (
-                mae_diff
-                if experimental_data and circuit_id in experimental_data
-                else None
-            ),
         }
 
+        for key in circuit.experimental_functions:
+            results[circuit_id][key] = {}
+            if "rms_diff" in circuit.experimental_functions[key]:
+                results[circuit_id][key]["rms_diff"] = circuit.experimental_functions[
+                    key
+                ]["rms_diff"]
+            if "mae_diff" in circuit.experimental_functions[key]:
+                results[circuit_id][key]["mae_diff"] = circuit.experimental_functions[
+                    key
+                ]["mae_diff"]
+
+        print(f"results[{circuit_id}]: {results[circuit_id].keys()}")
         print(f"\n{circuit_id} stats:")
         print("current stats: ", stats.describe(current))
         print("voltage stats: ", stats.describe(voltage))
@@ -175,7 +186,6 @@ def plot_coupled_vresults(
     coupled_system: CoupledRLCircuitsPID,
     t: np.ndarray,
     results: Dict,
-    experimental_data: Dict = None,
     save_path: str = None,
     show: bool = True,
 ):
@@ -194,7 +204,8 @@ def plot_coupled_vresults(
 
     # 1. Current tracking for all circuits
     ax = axes[0]
-    for i, circuit_id in enumerate(circuit_ids):
+    for i, circuit in enumerate(coupled_system.circuits):
+        circuit_id = circuit_ids[i]
         data = results[circuit_id]
         ax.plot(
             t,
@@ -204,15 +215,14 @@ def plot_coupled_vresults(
             label=f"{circuit_id}",
             linestyle="-",
         )
-        if experimental_data and circuit_id in experimental_data:
-            exp_data = pd.read_csv(
-                experimental_data[circuit_id], sep=None, engine="python"
-            )
-            exp_time = exp_data["time"]
-            exp_current = exp_data["current"]
+        if circuit.has_experimental_data(data_type="current", key="current"):
+            exp_time = circuit.experimental_functions["current_current"]["time_data"]
+            exp_values = circuit.experimental_functions["current_current"][
+                "values_data"
+            ]
             ax.plot(
                 exp_time,
-                exp_current,
+                exp_values,
                 color=colors[i],
                 linewidth=1,
                 label=f"{circuit_id} - Experimental",
@@ -221,10 +231,14 @@ def plot_coupled_vresults(
             )
 
             # Add comparison metrics to the plot
+            rms_diff = circuit.experimental_functions["current_current"]["rms_diff"]
+            mae_diff = circuit.experimental_functions["current_current"]["mae_diff"]
+
+            # Add comparison metrics to the plot
             ax.text(
                 0.02,
                 0.02,
-                f"{circuit_id} RMS Diff: {data['rms_diff']:.2f} A\n{circuit_id} MAE Diff: {data['mae_diff']:.2f} A",
+                f"{circuit_id} RMS Diff: {rms_diff:.2f} A\n{circuit_id} MAE Diff: {mae_diff:.2f} A",
                 transform=ax.transAxes,
                 verticalalignment="top",
                 bbox=dict(boxstyle="round,pad=0.3", facecolor="wheat", alpha=0.8),
@@ -253,7 +267,7 @@ def plot_coupled_vresults(
     # Adding Twin Axes to plot using temperature - if not constant
     use_variable_temperature = (
         True
-        if all(circuit.use_variable_temperature for circuit in coupled_system)
+        if all(circuit.use_variable_temperature for circuit in coupled_system.circuits)
         else False
     )
     if use_variable_temperature:
@@ -321,7 +335,6 @@ def plot_coupled_results(
     coupled_system: CoupledRLCircuitsPID,
     t: np.ndarray,
     results: Dict,
-    experimental_data: Dict = None,
     save_path: str = None,
     show: bool = True,
 ):
@@ -384,23 +397,36 @@ def plot_coupled_results(
 
     # 3. voltages
     ax = axes[2]
-    for i, circuit_id in enumerate(circuit_ids):
+    for i, circuit in enumerate(coupled_system.circuits):
+        circuit_id = circuit_ids[i]
         data = results[circuit_id]
         ax.plot(t, data["voltage"], color=colors[i], linewidth=2, label=circuit_id)
-        if experimental_data and circuit_id in experimental_data:
-            exp_data = pd.read_csv(
-                experimental_data[circuit_id], sep=None, engine="python"
-            )
-            exp_time = exp_data["time"]
-            exp_current = exp_data["voltage"]
+        if circuit.has_experimental_data(data_type="voltage", key="voltage"):
+            exp_time = circuit.experimental_functions["voltage_voltage"]["time_data"]
+            exp_values = circuit.experimental_functions["voltage_voltage"][
+                "values_data"
+            ]
             ax.plot(
                 exp_time,
-                exp_current,
+                exp_values,
                 color=colors[i],
                 linewidth=1,
                 label=f"{circuit_id} - Experimental",
                 linestyle=":",
                 alpha=0.7,
+            )
+
+            # Add comparison metrics to the plot
+            rms_diff = circuit.experimental_functions["voltage_voltage"]["rms_diff"]
+            mae_diff = circuit.experimental_functions["voltage_voltage"]["mae_diff"]
+
+            ax.text(
+                0.02 + i * 0.5,
+                0.02,
+                f"{circuit_id} RMS Diff: {rms_diff:.2f} V\n{circuit_id} MAE Diff: {mae_diff:.2f} V",
+                transform=ax.transAxes,
+                verticalalignment="top",
+                bbox=dict(boxstyle="round,pad=0.3", facecolor="wheat", alpha=0.8),
             )
 
     # ax.set_xlabel("Time (s)")
@@ -414,7 +440,7 @@ def plot_coupled_results(
     # Adding Twin Axes to plot using temperature - if not constant
     use_variable_temperature = (
         True
-        if all(circuit.use_variable_temperature for circuit in coupled_system)
+        if all(circuit.use_variable_temperature for circuit in coupled_system.circuits)
         else False
     )
     if use_variable_temperature:

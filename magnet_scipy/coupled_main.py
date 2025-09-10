@@ -51,6 +51,7 @@ def load_circuit_configuration(config_file: str) -> List[RLCircuitPID]:
                 temperature=circuit_data.get("temperature", 25.0),
                 temperature_csv=circuit_data.get("temperature_csv", None),
                 circuit_id=circuit_data.get("circuit_id", f"circuit_{len(circuits)+1}"),
+                experimental_data=circuit_data.get("experiment_data", []),
             )
             circuits.append(circuit)
 
@@ -91,44 +92,16 @@ def run_coupled_simulation(args):
     for circuit in coupled_system.circuits:
         circuit.print_configuration()
 
-    # Set experimental data if provided
+    # Set experimental data if provided (for backward compatibility)
     voltage_csvs = [circuit.voltage_csv for circuit in coupled_system.circuits]
     reference_csvs = [circuit.reference_csv for circuit in coupled_system.circuits]
     print(f"Voltage CSVs: {voltage_csvs}")
     print(f"Reference CSVs: {reference_csvs}")
 
     key = "voltage"
-    exp_key = "current"
     if all(v is None for v in voltage_csvs):
         key = "current"
-        exp_key = "voltage"
     print(f"Using {key} control based on available CSV files.")
-
-    experimental_data = {}
-    if args.experimental_csv:
-        exp_files = args.experimental_csv
-        if len(exp_files) != coupled_system.n_circuits:
-            raise ValueError(
-                f"Number of experimental files ({len(exp_files)}) does not match number of circuits ({coupled_system.n_circuits})."
-            )
-        for i, exp_file in enumerate(exp_files):
-            circuit_id = coupled_system.circuits[i].circuit_id
-            experimental_data[circuit_id] = exp_file
-            try:
-                exp_data = pd.read_csv(exp_file, sep=None, engine="python")
-
-                # Validate required columns
-                if "time" not in exp_data.columns or exp_key not in exp_data.columns:
-                    raise ValueError(
-                        f"Experimental CSV must contain 'time' and {exp_key} columns"
-                    )
-                print(f"✓ Experimental data loaded: {len(exp_data['time'])} points")
-            except Exception as e:
-                print(f"❌ Error loading experimental data: {e}")
-
-            print(
-                f"Loaded experimental data for {coupled_system.circuits[i].circuit_id} from {exp_file}"
-            )
 
     # Print configuration
     coupled_system.print_configuration()
@@ -177,7 +150,7 @@ def run_coupled_simulation(args):
 
         # Post-process results
         print("Processing results...")
-        t, results = prepare_coupled_post(sol, coupled_system, mode, experimental_data)
+        t, results = prepare_coupled_post(sol, coupled_system, mode)
 
         print("Generating plots...")
         plot_coupled_vresults(
@@ -185,7 +158,6 @@ def run_coupled_simulation(args):
             coupled_system,
             t,
             results,
-            experimental_data,
             save_path=args.save_plots,
             show=args.show_plots,
         )
@@ -201,16 +173,16 @@ def run_coupled_simulation(args):
         print(f"\nInitial current: {i0} A at t={t0} s")
         i0_ref = np.array(coupled_system.get_reference_currents(t0))
         print(f"init ref: {i0_ref} A at t={t0:.3f} s")
+        """
         v0 = []
-        if experimental_data is not None:
-            for circuit in coupled_system.circuits:
-                circuit_id = circuit.circuit_id
-                if circuit_id in experimental_data:
-                    exp_file = experimental_data[circuit_id]
-                    data = pd.read_csv(exp_file, sep=None, engine="python")
-
-                    v0.append(np.interp(t0, data["time"], data["voltage"]))
+        for circuit in coupled_system.circuits:
+            if circuit.has_experimental_data(data_type="voltage", key="voltage"):
+                data = circuit.get_experimental_data(
+                    data_type="voltage", key="voltage", t=t0
+                )
+                v0.append(data)
             print(f"init exp: {v0} V at t={t0:.3f} s")
+        """
 
         # merge all references
         merged_ref = pd.read_csv(reference_csvs[0], sep=None, engine="python")
@@ -275,7 +247,7 @@ def run_coupled_simulation(args):
             integral_error = sol.y[coupled_system.n_circuits :]
             print(f"tfinal={float(sol.t[-1])} s", end=",", flush=True)
             print(f"i1={currents[:, -1]} A", end=", ", flush=True)
-            print(f"integral_error1={integral_error[:, -1]} A", end=", ", flush=True)
+            print(f"integral_error1={integral_error[:, -1]} A.s", end=", ", flush=True)
             print("✓ Simulation completed")
 
             # Store the time points and solution
@@ -289,9 +261,7 @@ def run_coupled_simulation(args):
             if args.debug:
                 # Post-process results
                 print("Processing results...")
-                t, results = prepare_coupled_post(
-                    sol, coupled_system, mode, experimental_data
-                )
+                t, results = prepare_coupled_post(sol, coupled_system, mode)
 
                 print("Generating plots...")
                 plot_coupled_results(
@@ -299,7 +269,6 @@ def run_coupled_simulation(args):
                     coupled_system,
                     t,
                     results,
-                    experimental_data,
                     save_path=None,
                     show=True,
                 )
@@ -324,7 +293,7 @@ def run_coupled_simulation(args):
         # Post-process results
         print("Processing results...")
         t, results = prepare_coupled_post(
-            fake_sol(t_global, y_global), coupled_system, mode, experimental_data
+            fake_sol(t_global, y_global), coupled_system, mode
         )
 
         print("Generating plots...")
@@ -333,15 +302,16 @@ def run_coupled_simulation(args):
             coupled_system,
             t,
             results,
-            experimental_data,
             save_path=args.save_plots,
             show=args.show_plots,
         )
 
     # Save results if requested
+    output_filename = args.config_file.replace(".json", ".res")
     if args.save_results:
         print("save result to {args.save_results}")
-        save_coupled_results(coupled_system, t, results, args.save_results)
+        output_filename = args.save_results
+    save_coupled_results(coupled_system, t, results, output_filename)
 
     return sol, coupled_system, t, results
 
@@ -364,15 +334,7 @@ def main():
     parser.add_argument(
         "--config-file",
         type=str,
-        help="Path to JSON configuration file with circuit definitions",
-    )
-
-    # TODO make experimental_csv a list
-    parser.add_argument(
-        "--experimental_csv",
-        nargs="*",
-        type=str,
-        help="Path to CSV file with experimental current (columns: time, input) or voltage data (columns: time, voltage) for comparison ",
+        help="Path to JSON configuration file with circuit definitions (supports experimental_data field)",
     )
 
     # Simulation parameters
@@ -396,10 +358,13 @@ def main():
     )
 
     parser.add_argument(
-        "--method", type=str, choices=["RK45", "RK23", "DOP853", 'Radau', 'BDF', "LSODA"], 
-        default='RK45', help="Select method used to solve ODE"
+        "--method",
+        type=str,
+        choices=["RK45", "RK23", "DOP853", "Radau", "BDF", "LSODA"],
+        default="RK45",
+        help="Select method used to solve ODE",
     )
-    
+
     # Output options
     parser.add_argument(
         "--show_plots",
@@ -459,28 +424,26 @@ def main():
     if args.config_file:
         try:
             with open(args.config_file, "r") as f:
-                json.load(f)
+                config = json.load(f)
             print(f"✓ Configuration file loaded: {args.config_file}")
+
+            # Check for experimental_data in circuits
+            exp_data_count = 0
+            for circuit_config in config.get("circuits", []):
+                if "experimental_data" in circuit_config:
+                    exp_data_count += len(circuit_config["experimental_data"])
+
+            if exp_data_count > 0:
+                print(
+                    f"✓ Found {exp_data_count} experimental data entries in configuration"
+                )
+
         except FileNotFoundError:
             print(f"✗ Configuration file not found: {args.config_file}")
             sys.exit(1)
         except Exception as e:
             print(f"✗ Error reading configuration file: {e}")
             sys.exit(1)
-
-    # Check if experiments file exists
-    if args.experimental_csv:
-        for exp_file in args.experimental_csv:
-            try:
-                with open(exp_file, "r") as f:
-                    pass
-                print(f"✓ Experimental data file found: {exp_file}")
-            except FileNotFoundError:
-                print(f"✗ Experimental data file not found: {exp_file}")
-                sys.exit(1)
-            except Exception as e:
-                print(f"✗ Error reading experimental data file: {e}")
-                sys.exit(1)
 
     # Run simulation
     try:
@@ -489,6 +452,13 @@ def main():
         print(f"  Circuits simulated: {coupled_system.n_circuits}")
         print(f"  Time points: {len(t)}")
         print(f"  Total simulation time: {float(t[-1] - t[0]):.3f} seconds")
+
+        # Print experimental data summary
+        total_exp_data = sum(
+            len(circuit.experimental_data) for circuit in coupled_system.circuits
+        )
+        if total_exp_data > 0:
+            print(f"  Experimental data entries used: {total_exp_data}")
 
     except Exception as e:
         print(f"\n✗ Simulation failed: {e}")

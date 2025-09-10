@@ -1,5 +1,4 @@
 import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
 from typing import Dict, Tuple
 
@@ -12,7 +11,6 @@ def prepare_post(
     sol,
     circuit: RLCircuitPID,
     mode: str = "regular",
-    exp_data: pd.DataFrame = None,
 ) -> Tuple[np.ndarray, Dict]:
     """
     Post-process results for coupled RL circuits
@@ -44,21 +42,30 @@ def prepare_post(
     if circuit.use_variable_temperature:
         print("temperature=", temperature_over_time.shape)
 
-    if exp_data is not None:
-        print(circuit_id, ": exp_data=", type(exp_data), flush=True)
+    # load experimental data
+    circuit._load_experimental_data()
 
     # Extract state variables for this circuit
     if mode == "regular":
         current = sol.y.squeeze()
         voltage = circuit.voltage_func(t)
 
-        if exp_data is not None:
-            exp_time = exp_data["time"]
-            exp_current = exp_data["current"]
-            rms_diff, mae_diff = exp_metrics(t, exp_time, current, exp_current)
+        print(
+            "experimental_data[current_current]:",
+            circuit.has_experimental_data(data_type="current", key="current"),
+        )
+        if circuit.has_experimental_data(data_type="current", key="current"):
+            exp_time = circuit.experimental_functions["current_current"]["time_data"]
+            exp_values = circuit.experimental_functions["current_current"][
+                "values_data"
+            ]
+            rms_diff, mae_diff = exp_metrics(t, exp_time, current, exp_values)
             print(
                 f"Comparison metrics for {circuit_id}: RMS Difference = {rms_diff:.4f} A, MAE = {mae_diff:.4f} A"
             )
+            circuit.experimental_functions["current_current"]["rms_diff"] = rms_diff
+            circuit.experimental_functions["current_current"]["mae_diff"] = mae_diff
+
     else:
         current = sol.y[0]
         integral_error = sol.y[1]
@@ -97,66 +104,79 @@ def prepare_post(
             Kp_array * error + Ki_array * integral_error + Kd_array * derivative_error
         )
 
-        if exp_data is not None:
-            exp_time = exp_data["time"]
-            exp_values = exp_data["voltage"]
+        print(
+            "experimental_data[voltage_voltage]:",
+            circuit.has_experimental_data(data_type="voltage"),
+            circuit.has_experimental_data(data_type="voltage", key="voltage"),
+        )
+        if circuit.has_experimental_data(data_type="voltage", key="voltage"):
+            exp_time = circuit.experimental_functions["voltage_voltage"]["time_data"]
+            exp_values = circuit.experimental_functions["voltage_voltage"][
+                "values_data"
+            ]
             rms_diff, mae_diff = exp_metrics(t, exp_time, voltage, exp_values)
             print(
                 f"Comparison metrics for {circuit_id}: RMS Difference = {rms_diff:.4f} V, MAE = {mae_diff:.4f} V"
             )
+            circuit.experimental_functions["voltage_voltage"]["rms_diff"] = rms_diff
+            circuit.experimental_functions["voltage_voltage"]["mae_diff"] = mae_diff
 
-        # Calculate variable resistance over time
-        resistance_over_time = None
-        if circuit.use_variable_temperature:
-            resistance_over_time = np.array(
-                [
-                    circuit.get_resistance(float(curr), float(temp))
-                    for curr, temp in zip(current, temperature_over_time)
-                ]
-            )
-        else:
-            resistance_over_time = np.array(
-                [circuit.get_resistance(float(curr)) for curr in current]
-            )
+    # Calculate variable resistance over time
+    resistance_over_time = None
+    if circuit.use_variable_temperature:
+        resistance_over_time = np.array(
+            [
+                circuit.get_resistance(float(curr), float(temp))
+                for curr, temp in zip(current, temperature_over_time)
+            ]
+        )
+    else:
+        resistance_over_time = np.array(
+            [circuit.get_resistance(float(curr)) for curr in current]
+        )
 
-        # Calculate power dissipation
-        power = resistance_over_time * current**2
+    # Calculate power dissipation
+    power = resistance_over_time * current**2
 
-        # Store results for this circuit
-        results = {
-            "current": current,
-            "temperature": temperature_over_time,
-            "reference": i_ref,
-            "error": error,
-            "voltage": voltage,
-            "power": power,
-            "resistance": resistance_over_time,
-            "Kp": Kp_array,
-            "Ki": Ki_array,
-            "Kd": Kd_array,
-            "regions": current_regions,
-            "integral_error": integral_error,
-            "rms_diff": (rms_diff if exp_data is not None else None),
-            "mae_diff": (mae_diff if exp_data is not None else None),
-        }
+    # Store results for this circuit
+    results = {
+        "current": current,
+        "temperature": temperature_over_time,
+        "reference": i_ref,
+        "error": error,
+        "voltage": voltage,
+        "power": power,
+        "resistance": resistance_over_time,
+        "Kp": Kp_array,
+        "Ki": Ki_array,
+        "Kd": Kd_array,
+        "regions": current_regions,
+        "integral_error": integral_error,
+    }
 
-        print(f"\n{circuit_id} stats:")
-        print("current stats: ", stats.describe(current))
-        print("voltage stats: ", stats.describe(voltage))
-        if temperature_over_time is not None:
-            print("T stats: ", stats.describe(temperature_over_time))
-        print("R stats: ", stats.describe(resistance_over_time))
-        print("Power stats: ", stats.describe(power))
+    for key in circuit.experimental_functions:
+        results[key] = {}
+        if "rms_diff" in circuit.experimental_functions[key]:
+            results[key]["rms_diff"] = circuit.experimental_functions[key]["rms_diff"]
+        if "mae_diff" in circuit.experimental_functions[key]:
+            results[key]["mae_diff"] = circuit.experimental_functions[key]["mae_diff"]
+
+    print(f"results[{circuit_id}]: {results.keys()}")
+    print(f"\n{circuit_id} stats:")
+    print("current stats: ", stats.describe(current))
+    print("voltage stats: ", stats.describe(voltage))
+    if temperature_over_time is not None:
+        print("T stats: ", stats.describe(temperature_over_time))
+    print("R stats: ", stats.describe(resistance_over_time))
+    print("Power stats: ", stats.describe(power))
 
     return t, results
 
 
 def plot_vresults(
-    sol,
     circuit: RLCircuitPID,
     t: np.ndarray,
     data: Dict,
-    exp_data: pd.DataFrame = None,
     save_path: str = None,
     show: bool = True,
 ):
@@ -178,9 +198,9 @@ def plot_vresults(
         label=f"{circuit_id}",
         linestyle="-",
     )
-    if exp_data is not None:
-        exp_time = exp_data["time"]
-        exp_current = exp_data["current"]
+    if circuit.has_experimental_data(data_type="current", key="current"):
+        exp_time = circuit.experimental_functions["current_current"]["time_data"]
+        exp_current = circuit.experimental_functions["current_current"]["values_data"]
         ax.plot(
             exp_time,
             exp_current,
@@ -191,10 +211,13 @@ def plot_vresults(
         )
 
         # Add comparison metrics to the plot
+        rms_diff = circuit.experimental_functions["current_current"]["rms_diff"]
+        mae_diff = circuit.experimental_functions["current_current"]["mae_diff"]
+
         ax.text(
             0.02,
             0.02,
-            f"{circuit_id} RMS Diff: {data['rms_diff']:.2f} A\n{circuit_id} MAE Diff: {data['mae_diff']:.2f} A",
+            f"{circuit_id} RMS Diff: {rms_diff:.2f} A\n{circuit_id} MAE Diff: {mae_diff:.2f} A",
             transform=ax.transAxes,
             verticalalignment="top",
             bbox=dict(boxstyle="round,pad=0.3", facecolor="wheat", alpha=0.8),
@@ -280,7 +303,6 @@ def plot_results(
     circuit: RLCircuitPID,
     t: np.ndarray,
     data: Dict,
-    exp_data: pd.DataFrame = None,
     save_path: str = None,
     show: bool = True,
 ):
@@ -290,7 +312,7 @@ def plot_results(
     circuit_id = circuit.circuit_id
 
     # Create figure with subplots
-    fig, axes = plt.subplots(6, 1, figsize=(16, 20), sharex=True)
+    fig, axes = plt.subplots(5, 1, figsize=(16, 20), sharex=True)
     axes = axes.flatten()
 
     # 1. Current tracking for all circuits
@@ -351,26 +373,12 @@ def plot_results(
     ax.grid(True, alpha=0.3)
     ax.legend()
 
-    # 2. PID Gains
+    # 2. voltages
     ax = axes[1]
-    ax.plot(t, data["Kp"], "g-", label=f"{circuit_id} Kp", linewidth=2)
-    ax.plot(t, data["Ki"], "b-", label=f"{circuit_id} Ki", linewidth=2)
-    ax.plot(
-        t, data["Kd"] * 100, "r-", label=f"{circuit_id} Kd × 100", linewidth=2
-    )  # Scale Kd for visibility
-
-    # axes[1].set_xlabel("Time (s)")
-    ax.set_ylabel("PID Gains")
-    ax.set_title("Adaptive PID Parameters")
-    ax.grid(True, alpha=0.3)
-    ax.legend()
-
-    # 3. voltages
-    ax = axes[2]
     ax.plot(t, data["voltage"], linewidth=2, label=circuit_id)
-    if exp_data is not None:
-        exp_time = exp_data["time"]
-        exp_current = exp_data["voltage"]
+    if circuit.has_experimental_data(data_type="voltage", key="voltage"):
+        exp_time = circuit.experimental_functions["voltage_voltage"]["time_data"]
+        exp_current = circuit.experimental_functions["voltage_voltage"]["values_data"]
         ax.plot(
             exp_time,
             exp_current,
@@ -380,15 +388,17 @@ def plot_results(
             alpha=0.7,
         )
         # Add comparison metrics to the plot
+        rms_diff = circuit.experimental_functions["voltage_voltage"]["rms_diff"]
+        mae_diff = circuit.experimental_functions["voltage_voltage"]["mae_diff"]
+
         ax.text(
             0.02,
             0.02,
-            f"{circuit_id} RMS Diff: {data['rms_diff']:.2f} V\n{circuit_id} MAE Diff: {data['mae_diff']:.2f} V",
+            f"{circuit_id} RMS Diff: {rms_diff:.2f} V\n{circuit_id} MAE Diff: {mae_diff:.2f} V",
             transform=ax.transAxes,
             verticalalignment="top",
             bbox=dict(boxstyle="round,pad=0.3", facecolor="wheat", alpha=0.8),
         )
-
 
     # ax.set_xlabel("Time (s)")
     ax.set_ylabel("Voltage (V)")
@@ -397,7 +407,7 @@ def plot_results(
     ax.legend()
 
     # 4. Variable resistance
-    ax = axes[3]
+    ax = axes[2]
     # Adding Twin Axes to plot using temperature - if not constant
     use_variable_temperature = circuit.use_variable_temperature
     if use_variable_temperature:
@@ -436,8 +446,8 @@ def plot_results(
     ax.grid(True, alpha=0.3)
     ax.legend()
 
-    # 5. Power dissipation
-    ax = axes[4]
+    # 4. Power dissipation
+    ax = axes[3]
     ax.plot(t, data["power"], linewidth=2, label=circuit_id)
 
     # ax.set_xlabel("Time (s)")
@@ -446,8 +456,8 @@ def plot_results(
     ax.grid(True, alpha=0.3)
     ax.legend()
 
-    # 6. Tracking errors
-    ax = axes[5]
+    # 5. Tracking errors
+    ax = axes[4]
     ax.plot(t, data["error"], linewidth=2, label=circuit_id)
 
     ax.set_xlabel("Time (s)")
