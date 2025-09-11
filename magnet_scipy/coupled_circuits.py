@@ -366,6 +366,10 @@ class CoupledRLCircuitsPID:
         """Get the current mutual inductance matrix"""
         return np.array(self.M)
 
+    def validate(self):
+        for circuit in self.circuits:
+            circuit.validate()
+
     def __repr__(self) -> str:
         """String representation of the coupled system"""
         return f"CoupledRLCircuitsPID(n_circuits={self.n_circuits}, ids={self.circuit_ids})"

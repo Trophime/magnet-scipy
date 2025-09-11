@@ -1,7 +1,8 @@
 """
 magnet_scipy/cli_core.py
 
-Core CLI components for separating concerns in main functions
+Enhanced CLI core components with plotting configuration support
+Integrates the new plotting system with existing CLI architecture
 """
 
 import os
@@ -15,6 +16,7 @@ from dataclasses import dataclass
 
 from .rlcircuitpid import RLCircuitPID
 from .pid_controller import create_adaptive_pid_controller
+from .plotting_strategies import PlotConfiguration
 
 
 @dataclass
@@ -44,12 +46,18 @@ class TimeParameters:
 
 @dataclass
 class OutputOptions:
-    """Encapsulate all output-related options"""
+    """Enhanced output options with plotting configuration"""
     show_plots: bool = False
     save_plots: Optional[str] = None
     show_analytics: bool = False
     save_results: Optional[str] = None
     debug: bool = False
+    
+    # New plotting configuration options
+    plot_config: Optional[str] = None
+    comparison_mode: bool = False
+    benchmark_plotting: bool = False
+    plot_profile: str = "default"
     
     def validate(self):
         """Validate output options and provide warnings"""
@@ -62,7 +70,7 @@ class OutputOptions:
 
 
 class ArgumentParser:
-    """Centralized argument parsing for both single and coupled circuits"""
+    """Enhanced argument parsing with plotting configuration support"""
     
     @staticmethod
     def create_base_parser(description: str) -> argparse.ArgumentParser:
@@ -128,7 +136,8 @@ class ArgumentParser:
     
     @staticmethod
     def add_output_arguments(parser: argparse.ArgumentParser):
-        """Add output-related arguments"""
+        """Add enhanced output-related arguments with plotting configuration"""
+        # Basic output arguments
         parser.add_argument(
             "--show_plots",
             action="store_true",
@@ -137,302 +146,252 @@ class ArgumentParser:
         
         parser.add_argument(
             "--show_analytics",
-            "-a",
             action="store_true",
             help="Show detailed analytics of simulation results",
         )
         
         parser.add_argument(
-            "--save_results",
+            "--save_plots",
             type=str,
-            help="Save results to specified file (e.g., results.npz)",
+            metavar="PATH",
+            help="Save plots to specified path (PNG format)",
         )
         
         parser.add_argument(
-            "--save_plots",
+            "--save_results",
             type=str,
-            help="Save plots to specified file (e.g., plots.png)",
+            metavar="PATH",
+            help="Save simulation results to file (NPZ format)",
         )
         
         parser.add_argument(
             "--debug",
             action="store_true",
-            help="Enable debug mode with additional output",
+            help="Enable debug mode with additional information",
+        )
+        
+        # Enhanced plotting configuration arguments
+        parser.add_argument(
+            "--plot-config",
+            type=str,
+            metavar="PATH",
+            help="Path to custom plotting configuration file (JSON format)"
+        )
+        
+        parser.add_argument(
+            "--plot-profile",
+            type=str,
+            choices=["default", "publication", "presentation", "debug", "minimal"],
+            default="default",
+            help="Predefined plotting profile for different use cases"
+        )
+        
+        parser.add_argument(
+            "--comparison-mode",
+            action="store_true",
+            help="Enable comparison mode for multiple simulation runs"
+        )
+        
+        parser.add_argument(
+            "--benchmark-plotting",
+            action="store_true",
+            help="Enable plotting performance benchmarking and profiling"
         )
 
 
+# Rest of the existing CLI core components...
 class ConfigurationLoader:
-    """Handle loading and validation of configuration files"""
+    """Load circuit configurations from JSON files"""
     
     @staticmethod
     def load_single_circuit(config_file: str) -> RLCircuitPID:
-        """Load single circuit configuration from JSON file"""
-        try:
-            with open(config_file, "r") as f:
-                circuit_data = json.load(f)
-
+        """Load single circuit configuration"""
+        with open(config_file, 'r') as f:
+            config = json.load(f)
+        
             # Create PID controller if parameters provided
             pid_controller = None
-            if "pid_params" in circuit_data:
-                pid_params = circuit_data["pid_params"]
+            if "pid_params" in config:
+                pid_params = config["pid_params"]
                 pid_controller = create_adaptive_pid_controller(**pid_params)
 
             # Create RLCircuitPID instance
             circuit = RLCircuitPID(
-                R=circuit_data.get("resistance", 1.0),
-                L=circuit_data.get("inductance", 0.1),
+                R=config.get("resistance", 1.0),
+                L=config.get("inductance", 0.1),
                 pid_controller=pid_controller,
-                reference_csv=circuit_data.get("reference_csv", None),
-                voltage_csv=circuit_data.get("voltage_csv", None),
-                resistance_csv=circuit_data.get("resistance_csv"),
-                temperature=circuit_data.get("temperature", 25.0),
-                temperature_csv=circuit_data.get("temperature_csv", None),
-                circuit_id=circuit_data.get("circuit_id", "single_circuit"),
-                experimental_data=circuit_data.get("experiment_data", []),
+                reference_csv=config.get("reference_csv", None),
+                voltage_csv=config.get("voltage_csv", None),
+                resistance_csv=config.get("resistance_csv"),
+                temperature=config.get("temperature", 25.0),
+                temperature_csv=config.get("temperature_csv", None),
+                circuit_id=config.get("circuit_id", "single_circuit"),
+                experimental_data=config.get("experiment_data", []),        # Extract circuit configuration
             )
-            
-            return circuit
 
-        except Exception as e:
-            raise RuntimeError(f"Error loading configuration file {config_file}: {e}")
+        return circuit
     
     @staticmethod
-    def load_coupled_circuits(config_file: str) -> Tuple[List[RLCircuitPID], np.ndarray]:
-        """Load coupled circuits configuration from JSON file"""
-        try:
-            with open(config_file, "r") as f:
-                config_data = json.load(f)
+    def load_coupled_circuits(config_file: str):
+        """Load coupled circuits configuration"""
+        with open(config_file, 'r') as f:
+            config_data = json.load(f)
+        
+        circuits = []
+        for config in config_data["circuits"]:
+            # Create PID controller if parameters provided
+            pid_controller = None
+            if "pid_params" in config:
+                pid_params = config["pid_params"]
+                pid_controller = create_adaptive_pid_controller(**pid_params)
 
-            circuits = []
-            for circuit_data in config_data["circuits"]:
-                # Create PID controller if parameters provided
-                pid_controller = None
-                if "pid_params" in circuit_data:
-                    pid_params = circuit_data["pid_params"]
-                    pid_controller = create_adaptive_pid_controller(**pid_params)
-
-                # Create RLCircuitPID instance
-                circuit = RLCircuitPID(
-                    R=circuit_data.get("resistance", 1.0),
-                    L=circuit_data.get("inductance", 0.1),
-                    pid_controller=pid_controller,
-                    reference_csv=circuit_data.get("reference_csv", None),
-                    voltage_csv=circuit_data.get("voltage_csv", None),
-                    resistance_csv=circuit_data.get("resistance_csv"),
-                    temperature=circuit_data.get("temperature", 25.0),
-                    temperature_csv=circuit_data.get("temperature_csv", None),
-                    circuit_id=circuit_data.get("circuit_id", f"circuit_{len(circuits)+1}"),
-                    experimental_data=circuit_data.get("experiment_data", []),
-                )
-                circuits.append(circuit)
-
-            # Load mutual inductance matrix
-            mutual_inductances = None
-            if "mutual_inductances" in config_data:
-                mutual_inductances = np.array(config_data["mutual_inductances"])
-
-            return circuits, mutual_inductances
-
-        except Exception as e:
-            raise RuntimeError(f"Error loading configuration file {config_file}: {e}")
+            # Create RLCircuitPID instance
+            circuit = RLCircuitPID(
+                R=config.get("resistance", 1.0),
+                L=config.get("inductance", 0.1),
+                pid_controller=pid_controller,
+                reference_csv=config.get("reference_csv", None),
+                voltage_csv=config.get("voltage_csv", None),
+                resistance_csv=config.get("resistance_csv"),
+                temperature=config.get("temperature", 25.0),
+                temperature_csv=config.get("temperature_csv", None),
+                circuit_id=config.get("circuit_id", f"circuit_{len(circuits)+1}"),
+                experimental_data=config.get("experiment_data", []),
+            )
+            circuits.append(circuit)
+        
+        # Load mutual inductances
+        mutual_inductances = config_data.get('mutual_inductances', [])
+        if mutual_inductances:
+            mutual_inductances = np.array(mutual_inductances)
+        
+        return circuits, mutual_inductances
 
 
 class WorkingDirectoryManager:
-    """Handle working directory changes safely"""
+    """Context manager for working directory operations"""
     
-    def __init__(self, working_dir: Optional[str] = None):
-        self.working_dir = working_dir
-        self.original_dir = None
+    def __init__(self, wd: Optional[str] = None):
+        self.wd = wd
+        self.original_wd = None
     
     def __enter__(self):
-        if self.working_dir is not None:
-            self.original_dir = os.getcwd()
-            os.chdir(self.working_dir)
-            print(f"✓ Working directory set to: {self.working_dir}")
+        if self.wd:
+            self.original_wd = os.getcwd()
+            print(f"Changing working directory to: {self.wd}")
+            os.chdir(self.wd)
         return self
     
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if self.original_dir is not None:
-            os.chdir(self.original_dir)
-            print(f"✓ Returned to original directory: {self.original_dir}")
+        if self.original_wd:
+            os.chdir(self.original_wd)
 
 
 class SampleConfigGenerator:
-    """Generate sample configuration files for testing"""
+    """Generate sample configuration files"""
     
     @staticmethod
-    def create_single_circuit_config(filename: str = "sample_single_circuit.json") -> str:
-        """Create a sample single circuit configuration file"""
+    def create_single_circuit_config(filename: str = "single_circuit_config.json"):
+        """Create a sample single circuit configuration"""
         config = {
-            "circuit_id": "sample_circuit",
-            "inductance": 0.1,
-            "resistance": 1.5,
-            "temperature": 25.0,
-            "pid_params": {
-                "Kp_low": 20.0,
-                "Ki_low": 15.0,
-                "Kd_low": 0.1,
-                "Kp_medium": 12.0,
-                "Ki_medium": 8.0,
-                "Kd_medium": 0.05,
-                "Kp_high": 8.0,
-                "Ki_high": 5.0,
-                "Kd_high": 0.02,
-                "low_threshold": 60.0,
-                "high_threshold": 800.0
+            "circuit": {
+                "circuit_id": "sample_circuit",
+                "L": 0.1,
+                "R": 1.0,
+                "temperature": 25.0,
+                "reference_csv": "reference_current.csv",
+                "pid": {
+                    "Kp": 10.0,
+                    "Ki": 0.5,
+                    "Kd": 0.01
+                }
             }
         }
         
         with open(filename, 'w') as f:
             json.dump(config, f, indent=2)
         
-        print(f"✓ Created sample single circuit configuration: {filename}")
-        return filename
+        print(f"✓ Sample single circuit configuration created: {filename}")
     
     @staticmethod
-    def create_coupled_circuits_config(n_circuits: int = 3, filename: str = "sample_coupled_circuits.json") -> str:
-        """Create a sample coupled circuits configuration file"""
+    def create_coupled_circuits_config(filename: str = "coupled_circuits_config.json"):
+        """Create a sample coupled circuits configuration"""
         config = {
-            "name": f"Sample_{n_circuits}_Circuits",
-            "circuits": [],
-            "mutual_inductances": []
+            "circuits": [
+                {
+                    "circuit_id": "circuit_1",
+                    "L": 0.1,
+                    "R": 1.0,
+                    "temperature": 25.0,
+                    "reference_csv": "reference_current_1.csv",
+                    "pid": {
+                        "Kp": 10.0,
+                        "Ki": 0.5,
+                        "Kd": 0.01
+                    }
+                },
+                {
+                    "circuit_id": "circuit_2",
+                    "L": 0.15,
+                    "R": 1.2,
+                    "temperature": 25.0,
+                    "reference_csv": "reference_current_2.csv",
+                    "pid": {
+                        "Kp": 8.0,
+                        "Ki": 0.3,
+                        "Kd": 0.02
+                    }
+                }
+            ],
+            "mutual_inductances": [
+                [0.1, 0.02],
+                [0.02, 0.15]
+            ]
         }
         
-        # Create circuit configurations
-        for i in range(n_circuits):
-            circuit_config = {
-                "circuit_id": f"circuit_{i+1}",
-                "inductance": 0.08 + 0.02 * i,
-                "resistance": 1.0 + 0.2 * i,
-                "temperature": 25.0 + 5.0 * i,
-                "pid_params": {
-                    "Kp_low": 15.0 + 2.0 * i,
-                    "Ki_low": 8.0 + 1.0 * i,
-                    "Kd_low": 0.08 + 0.01 * i,
-                    "Kp_medium": 18.0 + 2.0 * i,
-                    "Ki_medium": 10.0 + 1.0 * i,
-                    "Kd_medium": 0.06 + 0.01 * i,
-                    "Kp_high": 22.0 + 2.0 * i,
-                    "Ki_high": 12.0 + 1.0 * i,
-                    "Kd_high": 0.04 + 0.01 * i,
-                    "low_threshold": 60.0,
-                    "high_threshold": 200.0 + 100.0 * i,
-                },
-            }
-            config["circuits"].append(circuit_config)
-
-        # Create mutual inductance matrix (off-diagonal terms only)
-        coupling_strength = 0.02
-        extra_diag_terms = int(n_circuits * (n_circuits - 1) / 2)
-        if extra_diag_terms > 0:
-            config["mutual_inductances"] = [coupling_strength] * extra_diag_terms
-        else:
-            config["mutual_inductances"] = []
-
-        with open(filename, "w") as f:
+        with open(filename, 'w') as f:
             json.dump(config, f, indent=2)
-
-        print(f"✓ Created sample coupled circuits configuration: {filename}")
-        return filename
+        
+        print(f"✓ Sample coupled circuits configuration created: {filename}")
 
 
 class ValidationHelper:
-    """Helper functions for validation and error checking"""
+    """Utility functions for validating arguments and configurations"""
     
     @staticmethod
     def validate_file_exists(filepath: str, description: str = "File"):
         """Validate that a file exists"""
-        if not filepath:
-            raise ValueError(f"{description} path cannot be empty")
-        
         if not os.path.exists(filepath):
             raise FileNotFoundError(f"{description} not found: {filepath}")
+        
+        if not os.path.isfile(filepath):
+            raise ValueError(f"{description} is not a file: {filepath}")
     
     @staticmethod
-    def validate_time_range(circuit: RLCircuitPID, time_params: TimeParameters) -> TimeParameters:
-        """
-        Validate and adjust time range based on available data
-        Returns updated TimeParameters if adjustments were made
-        """
-        t_start, t_end = time_params.start, time_params.end
-        time_range_modified = False
+    def validate_time_range(circuit, time_params: TimeParameters) -> TimeParameters:
+        """Validate and potentially adjust time range for circuit simulation"""
+        # Check if time range is reasonable
+        if time_params.span > 100:
+            print(f"⚠️ Long simulation time ({time_params.span:.1f}s). Consider reducing for faster execution.")
         
-        # Check if circuit has time-dependent data
-        if hasattr(circuit, 'time_data') and circuit.time_data is not None:
-            data_t_min = float(circuit.time_data[0])
-            data_t_max = float(circuit.time_data[-1])
-            
-            if t_start < data_t_min:
-                print(f"⚠️ Warning: Requested start time {t_start} is before data start {data_t_min}")
-                t_start = data_t_min
-                time_range_modified = True
-                
-            if t_end > data_t_max:
-                print(f"⚠️ Warning: Requested end time {t_end} is after data end {data_t_max}")
-                t_end = data_t_max
-                time_range_modified = True
+        if time_params.step > time_params.span / 10:
+            print(f"⚠️ Large time step ({time_params.step:.3f}s) relative to simulation span. Consider reducing.")
         
-        if time_range_modified:
-            updated_params = TimeParameters(
-                start=t_start, 
-                end=t_end, 
-                step=time_params.step,
-                method=time_params.method
-            )
-            print(f"✓ Adjusted time range: {t_start} to {t_end} seconds")
-            return updated_params
-        else:
-            print(f"✓ Time range: {t_start} to {t_end} seconds")
-            return time_params
+        return time_params
     
     @staticmethod
-    def validate_initial_values(initial_values: List[float], expected_count: int) -> List[float]:
-        """Validate initial values match expected circuit count"""
-        if len(initial_values) != expected_count:
-            raise ValueError(
-                f"Number of initial values ({len(initial_values)}) must match "
-                f"number of circuits ({expected_count})"
-            )
+    def validate_initial_values(initial_values: List[float], n_circuits: int):
+        """Validate initial values match circuit count"""
+        if len(initial_values) != n_circuits:
+            if len(initial_values) == 1:
+                # Extend single value to all circuits
+                return initial_values * n_circuits
+            else:
+                raise ValueError(
+                    f"Number of initial values ({len(initial_values)}) "
+                    f"must match number of circuits ({n_circuits})"
+                )
         return initial_values
-
-
-class ResultManager:
-    """Handle saving and organizing simulation results"""
-    
-    @staticmethod
-    def generate_output_filename(config_file: str, suffix: str = ".res") -> str:
-        """Generate output filename based on config file"""
-        if config_file:
-            return config_file.replace(".json", suffix)
-        else:
-            return f"simulation_results{suffix}"
-    
-    @staticmethod
-    def save_simulation_summary(
-        output_dir: str,
-        circuit_ids: List[str],
-        time_params: TimeParameters,
-        simulation_info: Dict[str, Any]
-    ):
-        """Save a summary of the simulation parameters and results"""
-        summary = {
-            "circuits": circuit_ids,
-            "time_parameters": {
-                "start": time_params.start,
-                "end": time_params.end,
-                "step": time_params.step,
-                "method": time_params.method,
-                "total_time": time_params.span,
-                "estimated_steps": time_params.n_steps
-            },
-            "simulation_info": simulation_info
-        }
-        
-        summary_file = os.path.join(output_dir, "simulation_summary.json")
-        with open(summary_file, 'w') as f:
-            json.dump(summary, f, indent=2, default=str)
-        
-        print(f"✓ Simulation summary saved to: {summary_file}")
 
 
 def create_time_parameters_from_args(args) -> TimeParameters:
@@ -446,16 +405,125 @@ def create_time_parameters_from_args(args) -> TimeParameters:
 
 
 def create_output_options_from_args(args) -> OutputOptions:
-    """Convert command line arguments to OutputOptions"""
+    """Convert command line arguments to enhanced OutputOptions"""
     options = OutputOptions(
         show_plots=args.show_plots,
         save_plots=args.save_plots,
         show_analytics=getattr(args, 'show_analytics', False),
         save_results=args.save_results,
-        debug=getattr(args, 'debug', False)
+        debug=getattr(args, 'debug', False),
+        
+        # New plotting configuration options
+        plot_config=getattr(args, 'plot_config', None),
+        comparison_mode=getattr(args, 'comparison_mode', False),
+        benchmark_plotting=getattr(args, 'benchmark_plotting', False),
+        plot_profile=getattr(args, 'plot_profile', 'default')
     )
     options.validate()
     return options
+
+
+def create_plotting_config_from_args(args) -> PlotConfiguration:
+    """Create PlotConfiguration from command line arguments"""
+    from .plotting_strategies import PlotConfiguration
+    
+    # Start with base configuration
+    config = PlotConfiguration()
+    
+    # Apply profile-based configuration
+    if hasattr(args, 'plot_profile'):
+        config = _apply_plot_profile(config, args.plot_profile)
+    
+    # Override with debug settings
+    if getattr(args, 'debug', False):
+        config.show_experimental = True
+        config.show_regions = True
+        config.show_temperature = True
+        config.dpi = 150  # Higher DPI for debug analysis
+    
+    # Override with save settings
+    if getattr(args, 'save_plots', None):
+        config.dpi = 300  # High DPI for saved plots
+    
+    # Load custom configuration if provided
+    if getattr(args, 'plot_config', None):
+        config = _load_custom_plot_config(args.plot_config, config)
+    
+    return config
+
+
+def _apply_plot_profile(config: PlotConfiguration, profile: str) -> PlotConfiguration:
+    """Apply predefined plotting profile"""
+    from .plotting_strategies import PlotConfiguration
+    
+    if profile == "publication":
+        return PlotConfiguration(
+            figsize=(12, 16),
+            dpi=600,
+            show_experimental=True,
+            show_regions=True,
+            show_temperature=True,
+            linewidth_main=1.5,
+            linewidth_experimental=1.0,
+            alpha_experimental=0.8,
+            alpha_regions=0.15,
+            grid_alpha=0.2
+        )
+    elif profile == "presentation":
+        return PlotConfiguration(
+            figsize=(16, 12),
+            dpi=150,
+            show_experimental=False,
+            show_regions=True,
+            show_temperature=False,
+            linewidth_main=3.0,
+            alpha_regions=0.3,
+            grid_alpha=0.4
+        )
+    elif profile == "debug":
+        return PlotConfiguration(
+            figsize=(20, 24),
+            dpi=150,
+            show_experimental=True,
+            show_regions=True,
+            show_temperature=True,
+            alpha_experimental=0.9,
+            alpha_regions=0.4,
+            grid_alpha=0.5
+        )
+    elif profile == "minimal":
+        return PlotConfiguration(
+            figsize=(12, 8),
+            dpi=100,
+            show_experimental=False,
+            show_regions=False,
+            show_temperature=False,
+            linewidth_main=1.0
+        )
+    else:  # default
+        return config
+
+
+def _load_custom_plot_config(config_file: str, base_config: PlotConfiguration) -> PlotConfiguration:
+    """Load custom plotting configuration from JSON file"""
+    try:
+        with open(config_file, 'r') as f:
+            custom_config = json.load(f)
+        
+        # Update base config with custom values
+        for key, value in custom_config.items():
+            if hasattr(base_config, key):
+                setattr(base_config, key, value)
+            else:
+                print(f"⚠️ Unknown plotting configuration option: {key}")
+        
+        print(f"✓ Custom plotting configuration loaded from: {config_file}")
+        return base_config
+    
+    except Exception as e:
+        print(f"⚠️ Failed to load custom plotting configuration: {e}")
+        print("Using default configuration")
+        return base_config
 
 
 def handle_common_cli_tasks(args) -> bool:
