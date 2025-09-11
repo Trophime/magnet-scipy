@@ -113,63 +113,63 @@ def run_single_circuit_workflow(args) -> int:
     Main workflow for single circuit simulation
     Replaces the complex logic from original main.py
     """
-    try:
-        # Create time and output parameters
-        time_params = create_time_parameters_from_args(args)
-        output_options = create_output_options_from_args(args)
+    # try:
+    # Create time and output parameters
+    time_params = create_time_parameters_from_args(args)
+    output_options = create_output_options_from_args(args)
+    
+    print_simulation_header("Single RL Circuit PID Simulation", args.config_file)
+    
+    # Load configuration
+    print(f"Loading configuration from: {args.config_file}")
+    circuit = ConfigurationLoader.load_single_circuit(args.config_file)
+    
+    # Create components
+    orchestrator = SimulationOrchestrator()
+    processor = ResultProcessor()
+    plotter = PlottingManager()
+    analytics = AnalyticsManager()
+    file_manager = FileManager()
+    
+    # Run simulation
+    simulation_result = orchestrator.run_single_circuit_simulation(
+        circuit, time_params, args.strategy
+    )
+    
+    if not simulation_result.success:
+        SimulationSummary.print_error_summary(simulation_result)
+        return 1
+    
+    # Process results
+    t, processed_results = processor.process_single_circuit_result(
+        simulation_result, circuit, output_options
+    )
+    
+    # Generate plots
+    plotter.plot_single_circuit_results(
+        circuit, t, processed_results, 
+        simulation_result.strategy_type, output_options
+    )
+    
+    # Show analytics
+    analytics.analyze_single_circuit_results(
+        circuit, t, processed_results, output_options
+    )
+    
+    # Save results
+    file_manager.save_single_circuit_results(
+        circuit, t, processed_results, output_options, args.config_file
+    )
+    
+    # Print summary
+    SimulationSummary.print_single_circuit_summary(
+        simulation_result, circuit, time_params
+    )
+    
+    return 0  # Success
         
-        print_simulation_header("Single RL Circuit PID Simulation", args.config_file)
-        
-        # Load configuration
-        print(f"Loading configuration from: {args.config_file}")
-        circuit = ConfigurationLoader.load_single_circuit(args.config_file)
-        
-        # Create components
-        orchestrator = SimulationOrchestrator()
-        processor = ResultProcessor()
-        plotter = PlottingManager()
-        analytics = AnalyticsManager()
-        file_manager = FileManager()
-        
-        # Run simulation
-        simulation_result = orchestrator.run_single_circuit_simulation(
-            circuit, time_params, args.strategy
-        )
-        
-        if not simulation_result.success:
-            SimulationSummary.print_error_summary(simulation_result)
-            return 1
-        
-        # Process results
-        t, processed_results = processor.process_single_circuit_result(
-            simulation_result, circuit, output_options
-        )
-        
-        # Generate plots
-        plotter.plot_single_circuit_results(
-            circuit, t, processed_results, 
-            simulation_result.strategy_type, output_options
-        )
-        
-        # Show analytics
-        analytics.analyze_single_circuit_results(
-            circuit, t, processed_results, output_options
-        )
-        
-        # Save results
-        file_manager.save_single_circuit_results(
-            circuit, t, processed_results, output_options, args.config_file
-        )
-        
-        # Print summary
-        SimulationSummary.print_single_circuit_summary(
-            simulation_result, circuit, time_params
-        )
-        
-        return 0  # Success
-        
-    except Exception as e:
-        return CLIErrorHandler.handle_simulation_error(e, output_options.debug)
+    # except Exception as e:
+    #     return CLIErrorHandler.handle_simulation_error(e, output_options.debug)
 
 
 def main():

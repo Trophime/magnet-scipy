@@ -278,7 +278,12 @@ class PlottingManager:
                 # Import sol from cache or create minimal sol object
                 from .plotting import plot_results
                 from .utils import fake_sol
-                sol = fake_sol(t, results.get('current', np.array([])))
+                currents  = results.get('current', np.array([]))
+                integral_errors = results.get('integral_error', np.array([]))
+                print('currents:', type(currents))
+                print('integral_errors:', type(integral_errors))
+                sol = fake_sol(t, [currents, integral_errors])
+                print(f'restore sol: sol={sol.y}')
                 
                 plot_results(
                     sol,
@@ -312,7 +317,9 @@ class PlottingManager:
             if strategy_type == "voltage_input":
                 from .coupled_plotting import plot_coupled_vresults
                 from .utils import fake_sol
-                sol = fake_sol(t, results[list(results.keys())[0]].get('current', np.array([])))
+
+                currents = [results[key].get('current', np.array([])) for key in results]
+                sol = fake_sol(t, np.stack(currents))
                 
                 plot_coupled_vresults(
                     sol,
@@ -325,7 +332,12 @@ class PlottingManager:
             else:
                 from .coupled_plotting import plot_coupled_results
                 from .utils import fake_sol
-                sol = fake_sol(t, results[list(results.keys())[0]].get('current', np.array([])))
+                
+                currents  = [results[key].get('current', np.array([])) for key in results]
+                integral_errors = [results[key].get('integral_error', np.array([])) for key in results]
+                np_currents= np.vstack(currents + integral_errors)
+                sol = fake_sol(t, np_currents)
+                
                 
                 plot_coupled_results(
                     sol,
@@ -335,9 +347,9 @@ class PlottingManager:
                     save_path=output_options.save_plots,
                     show=output_options.show_plots,
                 )
-            
+                
             print("✓ Coupled circuits plots generated successfully")
-            
+                
         except Exception as e:
             print(f"⚠️ Warning: Failed to generate plots: {e}")
             if output_options.debug:
@@ -368,10 +380,10 @@ class AnalyticsManager:
             analyze(circuit, t, results)
             
         except Exception as e:
-            print(f"⚠️ Warning: Failed to generate analytics: {e}")
-            if output_options.debug:
-                import traceback
-                traceback.print_exc()
+           print(f"⚠️ Warning: Failed to generate analytics: {e}")
+           if output_options.debug:
+               import traceback
+               traceback.print_exc()
     
     def analyze_coupled_circuits_results(
         self,
@@ -391,10 +403,10 @@ class AnalyticsManager:
             analyze_coupling_effects(coupled_system, t, results)
             
         except Exception as e:
-            print(f"⚠️ Warning: Failed to generate analytics: {e}")
-            if output_options.debug:
-                import traceback
-                traceback.print_exc()
+           print(f"⚠️ Warning: Failed to generate analytics: {e}")
+           if output_options.debug:
+               import traceback
+               traceback.print_exc()
 
 
 class FileManager:

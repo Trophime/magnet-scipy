@@ -1,591 +1,418 @@
+"""
+magnet_scipy/plotting.py
+
+Refactored plotting module using strategy pattern
+Maintains backward compatibility while providing cleaner architecture
+"""
+
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Optional
 
-from .rlcircuitpid import RLCircuitPID
-from scipy import stats
+from .plotting_core import PlottingManager, PlottingAnalytics, ResultsFileManager
+from .plotting_strategies import PlotConfiguration
 from .utils import exp_metrics
 
+# Global plotting manager instance
+_plotting_manager = None
 
-def prepare_post(
-    sol,
-    circuit: RLCircuitPID,
-    mode: str = "regular",
-) -> Tuple[np.ndarray, Dict]:
-    """
-    Post-process results for coupled RL circuits
 
-    Returns data structures for plotting and analysis
+def get_plotting_manager(config: PlotConfiguration = None) -> PlottingManager:
+    """Get or create the global plotting manager instance"""
+    global _plotting_manager
+    if _plotting_manager is None or config is not None:
+        _plotting_manager = PlottingManager(config)
+    return _plotting_manager
+
+
+def configure_plotting(
+    figsize: Tuple[int, int] = (16, 20),
+    dpi: int = 300,
+    show_experimental: bool = True,
+    show_regions: bool = True,
+    show_temperature: bool = True,
+    **kwargs
+):
+    """Configure global plotting settings"""
+    config = PlotConfiguration(
+        figsize=figsize,
+        dpi=dpi,
+        show_experimental=show_experimental,
+        show_regions=show_regions,
+        show_temperature=show_temperature,
+        **kwargs
+    )
+    global _plotting_manager
+    _plotting_manager = PlottingManager(config)
+
+
+# Backward compatible functions for single circuit
+def prepare_post(sol, circuit, mode: str = "regular") -> Tuple[np.ndarray, Dict]:
     """
-    t = sol.t
+    Prepare single circuit simulation results for plotting
+    
+    Args:
+        sol: Solution object from scipy.integrate.solve_ivp
+        circuit: RLCircuitPID instance
+        mode: "regular" for voltage simulation, "cde" for PID control
+        
+    Returns:
+        Tuple of (time_array, results_dict)
+    """
+    manager = get_plotting_manager()
+    strategy_type = "voltage_input" if mode == "regular" else "pid_control"
+    results, _ = manager.create_plots(
+        sol, circuit, strategy_type, show=False, show_analytics=False
+    )
+    
+    # Convert to old format for compatibility
     circuit_id = circuit.circuit_id
-
-    results = {}
-    i_ref = None
-    error = None
-    Kp_array = None
-    Ki_array = None
-    Kd_array = None
-    current_regions = None
-    integral_error = None
-
-    rms_diff = None
-    mae_diff = None
-
-    print(f"use_variable_temperature: {circuit.use_variable_temperature}")
-    temperature_over_time = None
-    if circuit.use_variable_temperature:
-        temperature_over_time = np.array(
-            [circuit.get_temperature(float(time)) for time in t]
-        )
-    print(circuit_id, ": t=", t.shape)
-    if circuit.use_variable_temperature:
-        print("temperature=", temperature_over_time.shape)
-
-    # load experimental data
-    circuit._load_experimental_data()
-
-    # Extract state variables for this circuit
-    if mode == "regular":
-        current = sol.y.squeeze()
-        voltage = circuit.voltage_func(t)
-
-        print(
-            "experimental_data[current_current]:",
-            circuit.has_experimental_data(data_type="current", key="current"),
-        )
-        if circuit.has_experimental_data(data_type="current", key="current"):
-            exp_time = circuit.experimental_functions["current_current"]["time_data"]
-            exp_values = circuit.experimental_functions["current_current"][
-                "values_data"
-            ]
-            rms_diff, mae_diff = exp_metrics(t, exp_time, current, exp_values)
-            print(
-                f"Comparison metrics for {circuit_id}: RMS Difference = {rms_diff:.4f} A, MAE = {mae_diff:.4f} A"
-            )
-            circuit.experimental_functions["current_current"]["rms_diff"] = rms_diff
-            circuit.experimental_functions["current_current"]["mae_diff"] = mae_diff
-
-    else:
-        current = sol.y[0]
-        integral_error = sol.y[1]
-        print("current=", current.shape)
-        print("integral_error=", integral_error.shape)
-
-        # Calculate reference current
-        i_ref = np.array([circuit.reference_current(t_val) for t_val in t])
-        print("i_ref=", i_ref.shape)
-
-        # Calculate adaptive PID gains over time
-        Kp_over_time = []
-        Ki_over_time = []
-        Kd_over_time = []
-        current_regions = []
-
-        for j, i_ref_val in enumerate(i_ref):
-            i_ref_float = float(i_ref_val)
-            Kp, Ki, Kd = circuit.get_pid_parameters(i_ref_float)
-            Kp_over_time.append(float(Kp))
-            Ki_over_time.append(float(Ki))
-            Kd_over_time.append(float(Kd))
-
-            region_name = circuit.get_current_region(i_ref_float)
-            current_regions.append(region_name)
-
-        # Calculate control signals and errors
-        error = i_ref - current
-        derivative_error = np.gradient(error, t[1] - t[0])
-
-        Kp_array = np.array(Kp_over_time)
-        Ki_array = np.array(Ki_over_time)
-        Kd_array = np.array(Kd_over_time)
-
-        voltage = (
-            Kp_array * error + Ki_array * integral_error + Kd_array * derivative_error
-        )
-
-        print(
-            "experimental_data[voltage_voltage]:",
-            circuit.has_experimental_data(data_type="voltage"),
-            circuit.has_experimental_data(data_type="voltage", key="voltage"),
-        )
-        if circuit.has_experimental_data(data_type="voltage", key="voltage"):
-            exp_time = circuit.experimental_functions["voltage_voltage"]["time_data"]
-            exp_values = circuit.experimental_functions["voltage_voltage"][
-                "values_data"
-            ]
-            rms_diff, mae_diff = exp_metrics(t, exp_time, voltage, exp_values)
-            print(
-                f"Comparison metrics for {circuit_id}: RMS Difference = {rms_diff:.4f} V, MAE = {mae_diff:.4f} V"
-            )
-            circuit.experimental_functions["voltage_voltage"]["rms_diff"] = rms_diff
-            circuit.experimental_functions["voltage_voltage"]["mae_diff"] = mae_diff
-
-    # Calculate variable resistance over time
-    resistance_over_time = None
-    if circuit.use_variable_temperature:
-        resistance_over_time = np.array(
-            [
-                circuit.get_resistance(float(curr), float(temp))
-                for curr, temp in zip(current, temperature_over_time)
-            ]
-        )
-    else:
-        resistance_over_time = np.array(
-            [circuit.get_resistance(float(curr)) for curr in current]
-        )
-
-    # Calculate power dissipation
-    power = resistance_over_time * current**2
-
-    # Store results for this circuit
-    results = {
-        "current": current,
-        "temperature": temperature_over_time,
-        "reference": i_ref,
-        "error": error,
-        "voltage": voltage,
-        "power": power,
-        "resistance": resistance_over_time,
-        "Kp": Kp_array,
-        "Ki": Ki_array,
-        "Kd": Kd_array,
-        "regions": current_regions,
-        "integral_error": integral_error,
-    }
-
-    for key in circuit.experimental_functions:
-        results[key] = {}
-        if "rms_diff" in circuit.experimental_functions[key]:
-            results[key]["rms_diff"] = circuit.experimental_functions[key]["rms_diff"]
-        if "mae_diff" in circuit.experimental_functions[key]:
-            results[key]["mae_diff"] = circuit.experimental_functions[key]["mae_diff"]
-
-    print(f"results[{circuit_id}]: {results.keys()}")
-    print(f"\n{circuit_id} stats:")
-    print("current stats: ", stats.describe(current))
-    print("voltage stats: ", stats.describe(voltage))
-    if temperature_over_time is not None:
-        print("T stats: ", stats.describe(temperature_over_time))
-    print("R stats: ", stats.describe(resistance_over_time))
-    print("Power stats: ", stats.describe(power))
-
-    return t, results
+    data = results.circuits[circuit_id]
+    
+    return results.time, data
 
 
 def plot_vresults(
-    circuit: RLCircuitPID,
+    circuit,
     t: np.ndarray,
     data: Dict,
     save_path: str = None,
     show: bool = True,
 ):
     """
-    Plot comprehensive results for coupled RL circuits with regular ODE
+    Plot voltage simulation results for single circuit
+    
+    Backward compatible wrapper that uses the new plotting system
     """
-    circuit_id = circuit.circuit_id
-
-    # Create figure with subplots
-    fig, axes = plt.subplots(4, 1, figsize=(16, 20), sharex=True)
-    axes = axes.flatten()
-
-    # 1. Current tracking for all circuits
-    ax = axes[0]
-    ax.plot(
-        t,
-        data["current"],
-        linewidth=2,
-        label=f"{circuit_id}",
-        linestyle="-",
+    # Create a fake solution object for the new system
+    class FakeSol:
+        def __init__(self, t, current):
+            self.t = t
+            if isinstance(current, dict):
+                self.y = current['current']
+            else:
+                self.y = current
+            self.success = True
+    
+    current = data.get('current', np.zeros_like(t))
+    sol = FakeSol(t, current)
+    
+    manager = get_plotting_manager()
+    manager.create_plots(
+        sol, circuit, "voltage_input", save_path, show, show_analytics=False
     )
-    if circuit.has_experimental_data(data_type="current", key="current"):
-        exp_time = circuit.experimental_functions["current_current"]["time_data"]
-        exp_current = circuit.experimental_functions["current_current"]["values_data"]
-        ax.plot(
-            exp_time,
-            exp_current,
-            linewidth=1,
-            label=f"{circuit_id} - Experimental",
-            linestyle=":",
-            alpha=0.7,
-        )
-
-        # Add comparison metrics to the plot
-        rms_diff = circuit.experimental_functions["current_current"]["rms_diff"]
-        mae_diff = circuit.experimental_functions["current_current"]["mae_diff"]
-
-        ax.text(
-            0.02,
-            0.02,
-            f"{circuit_id} RMS Diff: {rms_diff:.2f} A\n{circuit_id} MAE Diff: {mae_diff:.2f} A",
-            transform=ax.transAxes,
-            verticalalignment="top",
-            bbox=dict(boxstyle="round,pad=0.3", facecolor="wheat", alpha=0.8),
-        )
-
-    # ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Current (A)")
-    ax.set_title("Currents")
-    ax.grid(True, alpha=0.3)
-    ax.legend()
-
-    # 2. Voltage
-    ax = axes[1]
-    ax.plot(t, data["voltage"], linewidth=2, label=circuit_id)
-
-    # ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Voltage (V)")
-    ax.set_title("Voltages")
-    ax.grid(True, alpha=0.3)
-    ax.legend()
-
-    # 3. Variable resistance
-    ax = axes[2]
-    # Adding Twin Axes to plot using temperature - if not constant
-    use_variable_temperature = circuit.use_variable_temperature
-    if use_variable_temperature:
-        ax2 = ax.twinx()
-
-    if use_variable_temperature:
-        label = f"{circuit_id}"  # change label if temp is contant
-    else:
-        label = f"{circuit_id} Tin={circuit.temperature}°C"
-    ax.plot(t, data["resistance"], linewidth=2, label=label)
-
-    # TODO add temperature if available in right yaxis - if not constant
-    if use_variable_temperature:
-        label = f"{circuit_id} Tin"
-        ax2.plot(
-            t,
-            data["temperature"],
-            marker="o",
-            markersize=4,
-            markevery=5,
-            linestyle="",
-            label=label,
-            alpha=0.5,
-        )
-
-    # if there is at least a circuit with a non constant temperature
-    if use_variable_temperature:
-        ax2.set_ylabel("Tin (°C)")
-        ax2.tick_params(axis="y")
-        ax2.grid(False)
-        # ax2.legend()
-
-    # ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Resistance (Ω)")
-    ax.set_title("Resistances")
-    ax.grid(True, alpha=0.3)
-    ax.legend()
-
-    # # 4. Power dissipation
-    ax = axes[3]
-    ax.plot(t, data["power"], linewidth=2, label=circuit_id)
-
-    ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Power (W)")
-    ax.set_title(" P = R(I,T) × I² ")
-    ax.grid(True, alpha=0.3)
-    ax.legend()
-
-    plt.tight_layout()
-    if show:
-        plt.show()
-    if save_path:
-        fig.savefig(save_path, dpi=300)
-        print(f"Plots saved to {save_path}")
-    plt.close(fig)
 
 
 def plot_results(
     sol,
-    circuit: RLCircuitPID,
+    circuit,
     t: np.ndarray,
     data: Dict,
     save_path: str = None,
     show: bool = True,
 ):
     """
-    Plot comprehensive results for coupled RL circuits
+    Plot PID control results for single circuit
+    
+    Backward compatible wrapper that uses the new plotting system
     """
-    circuit_id = circuit.circuit_id
-
-    # Create figure with subplots
-    fig, axes = plt.subplots(5, 1, figsize=(16, 20), sharex=True)
-    axes = axes.flatten()
-
-    # 1. Current tracking for all circuits
-    ax = axes[0]
-    ax.plot(
-        t,
-        data["current"],
-        linewidth=2,
-        label=f"{circuit_id} - Actual",
-        linestyle="-",
-    )
-    ax.plot(
-        t,
-        data["reference"],
-        linewidth=2,
-        label=f"{circuit_id} - Reference",
-        linestyle="--",
-        alpha=0.7,
+    manager = get_plotting_manager()
+    manager.create_plots(
+        sol, circuit, "pid_control", save_path, show, show_analytics=False
     )
 
-    # Color background by current region
-    prev_region = None
-    region_colors = {
-        "Low": "lightgreen",
-        "Medium": "lightyellow",
-        "High": "lightcoral",
-        "low": "lightgreen",
-        "medium": "lightyellow",
-        "high": "lightcoral",
-    }
 
-    current_regions = data["regions"]
-    for i, region in enumerate(
-        current_regions[::100]
-    ):  # Sample every 100 points for performance
-        if region != prev_region:
-            region_start = t[i * 100] if i * 100 < len(t) else t[-1]
-            # Find next region change
-            region_end = t[-1]
-            for j in range(i + 1, len(current_regions[::100])):
-                if current_regions[j * 100] != region and j * 100 < len(t):
-                    region_end = t[j * 100]
-                    break
-
-            color_key = region.lower() if region.lower() in region_colors else region
-            ax.axvspan(
-                region_start,
-                region_end,
-                alpha=0.2,
-                color=region_colors.get(color_key, "lightgray"),
-                label=f"{region} Current" if prev_region != region else "",
-            )
-            prev_region = region
-
-    # ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Current (A)")
-    ax.set_title("Current Tracking - All Circuits")
-    ax.grid(True, alpha=0.3)
-    ax.legend()
-
-    # 2. voltages
-    ax = axes[1]
-    ax.plot(t, data["voltage"], linewidth=2, label=circuit_id)
-    if circuit.has_experimental_data(data_type="voltage", key="voltage"):
-        exp_time = circuit.experimental_functions["voltage_voltage"]["time_data"]
-        exp_current = circuit.experimental_functions["voltage_voltage"]["values_data"]
-        ax.plot(
-            exp_time,
-            exp_current,
-            linewidth=1,
-            label=f"{circuit_id} - Experimental",
-            linestyle=":",
-            alpha=0.7,
-        )
-        # Add comparison metrics to the plot
-        rms_diff = circuit.experimental_functions["voltage_voltage"]["rms_diff"]
-        mae_diff = circuit.experimental_functions["voltage_voltage"]["mae_diff"]
-
-        ax.text(
-            0.02,
-            0.02,
-            f"{circuit_id} RMS Diff: {rms_diff:.2f} V\n{circuit_id} MAE Diff: {mae_diff:.2f} V",
-            transform=ax.transAxes,
-            verticalalignment="top",
-            bbox=dict(boxstyle="round,pad=0.3", facecolor="wheat", alpha=0.8),
-        )
-
-    # ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Voltage (V)")
-    ax.set_title("Control Voltages")
-    ax.grid(True, alpha=0.3)
-    ax.legend()
-
-    # 4. Variable resistance
-    ax = axes[2]
-    # Adding Twin Axes to plot using temperature - if not constant
-    use_variable_temperature = circuit.use_variable_temperature
-    if use_variable_temperature:
-        ax2 = ax.twinx()
-
-    if "temperature" in data and data["temperature"] is not None:
-        label = f"{circuit_id}"  # change label if temp is contant
+def analyze(circuit, t: np.ndarray, data: Dict):
+    """
+    Perform detailed analysis of single circuit simulation
+    
+    Backward compatible wrapper
+    """
+    # Create results structure for new analytics system
+    from .plotting_strategies import ProcessedResults
+    
+    circuits_data = {circuit.circuit_id: data}
+    
+    # Determine strategy type based on available data
+    if 'reference' in data and 'error' in data:
+        strategy_type = "pid_control"
     else:
-        label = f"{circuit_id} (Tin={circuit.temperature}°C)"
-
-    ax.plot(t, data["resistance"], linewidth=2, label=label)
-    # TODO add temperature if available in right yaxis - if not constant
-    if use_variable_temperature:
-        label = f"{circuit_id} Tin"
-        ax2.plot(
-            t,
-            data["temperature"],
-            marker="o",
-            markersize=4,
-            markevery=5,
-            linestyle="",
-            label=label,
-            alpha=0.5,
-        )
-
-    # if there is at least a circuit with a non constant temperature
-    if use_variable_temperature:
-        ax2.set_ylabel("Tin (°C)")
-        ax2.tick_params(axis="y")
-        ax2.grid(False)
-        # ax2.legend()
-
-    # ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Resistance (Ω)")
-    ax.set_title("Circuit Resistances")
-    ax.grid(True, alpha=0.3)
-    ax.legend()
-
-    # 4. Power dissipation
-    ax = axes[3]
-    ax.plot(t, data["power"], linewidth=2, label=circuit_id)
-
-    # ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Power (W)")
-    ax.set_title("Power Dissipation")
-    ax.grid(True, alpha=0.3)
-    ax.legend()
-
-    # 5. Tracking errors
-    ax = axes[4]
-    ax.plot(t, data["error"], linewidth=2, label=circuit_id)
-
-    ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Error (A)")
-    ax.set_title("Tracking Errors")
-    ax.grid(True, alpha=0.3)
-    ax.legend()
-
-    plt.tight_layout()
-    if show:
-        plt.show()
-    if save_path:
-        fig.savefig(save_path, dpi=300)
-        print(f"Plots saved to {save_path}")
-    plt.close(fig)
-
-
-def analyze(circuit: RLCircuitPID, t: np.ndarray, data: Dict):
-    """
-    Provide detailed numerical analysis of coupling effects
-    """
-    circuit_id = circuit.circuit_id
-
-    print("\n=== Coupling Effects Analysis ===")
-
-    # Current statistics
-    print("\nCurrent Statistics:")
-    current = data["current"]
-    print(f"  {circuit_id}:")
-    print(f"    Max current: {float(np.max(np.abs(current))):.3f} A")
-    print(f"    RMS current: {float(np.sqrt(np.mean(current**2))):.3f} A")
-    print(f"    Current variation (std): {float(np.std(current)):.3f} A")
-
-    # Error analysis
-    print("\nTracking Performance:")
-    error = data["error"]
-    rms_error = float(np.sqrt(np.mean(error**2)))
-    max_error = float(np.max(np.abs(error)))
-    print(f"  {circuit_id}:")
-    print(f"    RMS error: {rms_error:.4f} A")
-    print(f"    Max error: {max_error:.4f} A")
-
-    # PID region usage
-    print("\nPID Region Usage:")
-    regions = data["regions"]
-    unique_regions, counts = np.unique(regions, return_counts=True)
-
-    print(f"  {circuit_id}:")
-    for region, count in zip(unique_regions, counts):
-        time_percent = (count / len(regions)) * 100
-        print(f"    {region} region: {time_percent:.1f}% of time")
-
-    # Energy analysis
-    print("\nEnergy Analysis:")
-    total_energy_dissipated = 0.0
-    max_instantaneous_power = 0.0
-
-    power = data["power"]
-    energy_dissipated = float(np.sum(power) * (t[1] - t[0]))
-    max_power = float(np.max(power))
-
-    total_energy_dissipated += energy_dissipated
-    max_instantaneous_power = max(max_instantaneous_power, max_power)
-
-    print(f"  {circuit_id}:")
-    print(f"    Energy dissipated: {energy_dissipated:.3f} J")
-    print(f"    Max power: {max_power:.3f} W")
-
-    print(f"  Total system energy dissipated: {total_energy_dissipated:.3f} J")
-    print(f"  Max instantaneous power (any circuit): {max_instantaneous_power:.3f} W")
+        strategy_type = "voltage_input"
+    
+    results = ProcessedResults(
+        time=t,
+        circuits=circuits_data,
+        strategy_type=strategy_type,
+        metadata={}
+    )
+    
+    analytics = PlottingAnalytics.analyze_circuit_performance(results)
+    PlottingAnalytics.print_detailed_analytics(analytics)
 
 
 def save_results(
-    circuit: RLCircuitPID,
+    circuit,
     t: np.ndarray,
-    data: Dict,
-    filename: str = "coupled_simulation_results.npz",
+    results: Dict,
+    filename: str = "single_circuit_results.npz"
 ):
     """
-    Save simulation results to a file for later analysis
+    Save single circuit results to file
+    
+    Backward compatible wrapper
     """
+    from .plotting_strategies import ProcessedResults
+    
+    circuits_data = {circuit.circuit_id: results}
+    
+    # Determine strategy type
+    if 'reference' in results and 'error' in results:
+        strategy_type = "pid_control"
+    else:
+        strategy_type = "voltage_input"
+    
+    processed_results = ProcessedResults(
+        time=t,
+        circuits=circuits_data,
+        strategy_type=strategy_type,
+        metadata={"circuit_id": circuit.circuit_id}
+    )
+    
+    # Generate analytics for saving
+    analytics = PlottingAnalytics.analyze_circuit_performance(processed_results)
+    
+    ResultsFileManager.save_results(processed_results, analytics, filename)
 
-    circuit_id = circuit.circuit_id
 
-    # Prepare data for saving
-    save_data = {
-        "time": t,
-        "circuit_id": circuit_id,
+def load_results(filename: str):
+    """Load previously saved single circuit results"""
+    return ResultsFileManager.load_results(filename)
+
+
+# New advanced plotting functions
+def create_advanced_plots(
+    sol,
+    system,
+    strategy_type: str = None,
+    save_path: str = None,
+    show: bool = True,
+    show_analytics: bool = False,
+    config: PlotConfiguration = None
+):
+    """
+    Create advanced plots with full control over configuration
+    
+    Args:
+        sol: Solution object
+        system: Circuit or coupled system
+        strategy_type: "voltage_input", "pid_control", or None for auto-detect
+        save_path: Path to save plots
+        show: Whether to show plots
+        show_analytics: Whether to print detailed analytics
+        config: Custom plot configuration
+        
+    Returns:
+        Tuple of (processed_results, analytics, figure)
+    """
+    manager = get_plotting_manager(config)
+    results, analytics = manager.create_plots(
+        sol, system, strategy_type, save_path, show, show_analytics
+    )
+    return results, analytics
+
+
+def create_comparison_plots(
+    results_list,
+    labels: list,
+    save_path: str = None,
+    show: bool = True,
+    config: PlotConfiguration = None
+):
+    """
+    Create comparison plots between multiple simulation runs
+    
+    Args:
+        results_list: List of (sol, system) tuples or ProcessedResults
+        labels: List of labels for each result
+        save_path: Path to save comparison plots
+        show: Whether to show plots
+        config: Custom plot configuration
+        
+    Returns:
+        Figure object
+    """
+    manager = get_plotting_manager(config)
+    
+    # Process results if needed
+    processed_results = []
+    for i, item in enumerate(results_list):
+        if hasattr(item, 'circuits'):  # Already ProcessedResults
+            processed_results.append((item, labels[i]))
+        else:
+            # Assume (sol, system) tuple
+            sol, system = item
+            results, _ = manager.create_plots(
+                sol, system, show=False, show_analytics=False
+            )
+            processed_results.append((results, labels[i]))
+    
+    return manager.create_comparison_plots(processed_results, save_path, show)
+
+
+def create_custom_plot(
+    data_dict: Dict,
+    plot_type: str,
+    title: str = "",
+    xlabel: str = "",
+    ylabel: str = "",
+    save_path: str = None,
+    show: bool = True,
+    **kwargs
+):
+    """
+    Create custom plots with user-provided data
+    
+    Args:
+        data_dict: Dictionary of {label: (x_data, y_data)} pairs
+        plot_type: "line", "scatter", "bar", etc.
+        title: Plot title
+        xlabel: X-axis label
+        ylabel: Y-axis label
+        save_path: Path to save plot
+        show: Whether to show plot
+        **kwargs: Additional matplotlib arguments
+    """
+    manager = get_plotting_manager()
+    colors = manager.config.colors
+    
+    fig, ax = plt.subplots(figsize=manager.config.figsize)
+    
+    for i, (label, (x_data, y_data)) in enumerate(data_dict.items()):
+        color = colors[i % len(colors)]
+        
+        if plot_type == "line":
+            ax.plot(x_data, y_data, color=color, label=label, 
+                   linewidth=manager.config.linewidth_main, **kwargs)
+        elif plot_type == "scatter":
+            ax.scatter(x_data, y_data, color=color, label=label, **kwargs)
+        elif plot_type == "bar":
+            ax.bar(x_data, y_data, color=color, label=label, alpha=0.7, **kwargs)
+    
+    ax.set_title(title)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.grid(True, alpha=manager.config.grid_alpha)
+    ax.legend()
+    
+    plt.tight_layout()
+    
+    if save_path:
+        fig.savefig(save_path, dpi=manager.config.dpi)
+        print(f"Custom plot saved to {save_path}")
+    
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)
+    
+    return fig
+
+
+# Experimental data overlay utilities
+def add_experimental_overlay(
+    ax,
+    time_data: np.ndarray,
+    computed_data: np.ndarray,
+    exp_time: np.ndarray,
+    exp_data: np.ndarray,
+    label: str = "Experimental",
+    color: str = None
+):
+    """
+    Add experimental data overlay to an existing plot
+    
+    Args:
+        ax: Matplotlib axis object
+        time_data: Computed time array
+        computed_data: Computed data array
+        exp_time: Experimental time array
+        exp_data: Experimental data array
+        label: Label for experimental data
+        color: Color for experimental data (auto if None)
+    """
+    if color is None:
+        color = ax.get_lines()[-1].get_color()  # Use same color as last line
+    
+    # Plot experimental data
+    ax.plot(exp_time, exp_data, color=color, linestyle=":", 
+           alpha=0.7, linewidth=1.0, label=label)
+    
+    # Compute and display comparison metrics
+    rms_diff, mae_diff = exp_metrics(time_data, exp_time, computed_data, exp_data)
+    
+    ax.text(
+        0.02, 0.98,
+        f"RMS Diff: {rms_diff:.3f}\nMAE Diff: {mae_diff:.3f}",
+        transform=ax.transAxes,
+        verticalalignment="top",
+        bbox=dict(boxstyle="round,pad=0.3", facecolor="wheat", alpha=0.8)
+    )
+    
+    return rms_diff, mae_diff
+
+
+# Performance benchmarking utilities
+def benchmark_plotting_performance(sol, system, n_runs: int = 5):
+    """
+    Benchmark plotting performance
+    
+    Args:
+        sol: Solution object
+        system: Circuit system
+        n_runs: Number of runs for averaging
+        
+    Returns:
+        Dictionary with timing information
+    """
+    import time
+    
+    manager = get_plotting_manager()
+    
+    # Warm up
+    manager.create_plots(sol, system, show=False, show_analytics=False)
+    
+    # Benchmark data preparation
+    prep_times = []
+    for _ in range(n_runs):
+        start = time.perf_counter()
+        strategy_type = manager.detect_strategy(sol, system)
+        strategy = manager.strategies[strategy_type]
+        results = strategy.prepare_data(sol, system)
+        end = time.perf_counter()
+        prep_times.append(end - start)
+    
+    # Benchmark plot creation
+    plot_times = []
+    for _ in range(n_runs):
+        start = time.perf_counter()
+        strategy.create_plots(results, system, show=False)
+        end = time.perf_counter()
+        plot_times.append(end - start)
+    
+    return {
+        "data_preparation": {
+            "mean": np.mean(prep_times),
+            "std": np.std(prep_times),
+            "min": np.min(prep_times),
+            "max": np.max(prep_times)
+        },
+        "plot_creation": {
+            "mean": np.mean(plot_times),
+            "std": np.std(plot_times),
+            "min": np.min(plot_times),
+            "max": np.max(plot_times)
+        },
+        "total": {
+            "mean": np.mean(prep_times) + np.mean(plot_times)
+        }
     }
-
-    # Add results for each circuit
-    save_data[f"{circuit_id}_current"] = data["current"]
-    save_data[f"{circuit_id}_reference"] = data["reference"]
-    save_data[f"{circuit_id}_error"] = data["error"]
-    save_data[f"{circuit_id}_voltage"] = data["voltage"]
-    save_data[f"{circuit_id}_power"] = data["power"]
-    save_data[f"{circuit_id}_resistance"] = data["resistance"]
-    save_data[f"{circuit_id}_Kp"] = data["Kp"]
-    save_data[f"{circuit_id}_Ki"] = data["Ki"]
-    save_data[f"{circuit_id}_Kd"] = data["Kd"]
-
-    # Save to file
-    np.savez_compressed(filename, **save_data)
-    print(f"Results saved to {filename}")
-
-
-def load_coupled_results(
-    filename: str = "coupled_simulation_results.npz",
-) -> Tuple[np.ndarray, Dict]:
-    """
-    Load previously saved simulation results
-    """
-    data = np.load(filename)
-
-    t = data["time"]
-    circuit_id = data["circuit_id"]
-
-    results = {
-        "current": data[f"{circuit_id}_current"],
-        "reference": data[f"{circuit_id}_reference"],
-        "error": data[f"{circuit_id}_error"],
-        "voltage": data[f"{circuit_id}_voltage"],
-        "power": data[f"{circuit_id}_power"],
-        "resistance": data[f"{circuit_id}_resistance"],
-        "Kp": data[f"{circuit_id}_Kp"],
-        "Ki": data[f"{circuit_id}_Ki"],
-        "Kd": data[f"{circuit_id}_Kd"],
-    }
-
-    print(f"Results loaded from {filename}")
-    return t, results
