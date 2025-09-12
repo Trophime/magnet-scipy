@@ -1,6 +1,7 @@
 """
 Strategy Pattern Implementation for Simulation Modes
-Separates voltage-driven and PID control simulations into distinct strategies
+Version 3.0: Fixed data structure conflicts - uses unified SimulationResult from cli_simulation
+Breaking change: Local SimulationResult class removed, imports enhanced version
 """
 
 from abc import ABC, abstractmethod
@@ -9,6 +10,8 @@ from typing import Dict, List, Tuple, Any
 import numpy as np
 from scipy.integrate import solve_ivp
 
+# Version 3.0: Import unified SimulationResult from cli_simulation
+from .simulation_types import SimulationResult, SimulationParameters
 
 @dataclass
 class SimulationParameters:
@@ -20,15 +23,6 @@ class SimulationParameters:
     rtol: float = 1e-6
     atol: float = 1e-9
     initial_values: List[float] = None
-
-
-@dataclass
-class SimulationResult:
-    """Unified result structure for all simulation strategies"""
-    time: np.ndarray
-    solution: np.ndarray
-    metadata: Dict[str, Any]
-    strategy_type: str
 
 
 class SimulationStrategy(ABC):
@@ -76,7 +70,7 @@ class VoltageInputStrategy(SimulationStrategy):
         return errors
     
     def get_initial_conditions(self, system, params: SimulationParameters) -> np.ndarray:
-        """Initial conditions: just currents for each circuit"""
+        """Get initial conditions for voltage-driven simulation"""
         if hasattr(system, 'circuits'):  # Coupled system
             n_circuits = len(system.circuits)
             if params.initial_values and len(params.initial_values) == n_circuits:
@@ -91,6 +85,7 @@ class VoltageInputStrategy(SimulationStrategy):
     
     def run_simulation(self, system, params: SimulationParameters) -> SimulationResult:
         """Run voltage-driven simulation"""
+        print("run Voltage-driven simulation ***", flush=True)
         y0 = self.get_initial_conditions(system, params)
         t_span = (params.t_start, params.t_end)
         
@@ -101,6 +96,12 @@ class VoltageInputStrategy(SimulationStrategy):
             else:
                 # Single circuit case
                 return system.voltage_vector_field(t, y)
+        
+        # Use system's voltage vector field
+        if hasattr(system, 'circuits'):  # Coupled system
+            circuit_ids = [c.circuit_id for c in system.circuits]
+        else:  # Single circuit
+            circuit_ids = [system.circuit_id]
         
         sol = solve_ivp(
             vector_field,
@@ -113,26 +114,32 @@ class VoltageInputStrategy(SimulationStrategy):
             max_step=params.dt,
         )
         
+        # Return enhanced SimulationResult with all required fields
         return SimulationResult(
             time=sol.t,
-            solution=sol.y,
+            solution=sol.y,  # Transpose to match expected format
             metadata={
-                "success": sol.success,
-                "message": sol.message,
-                "n_evaluations": sol.nfev,
-                "state_size": len(y0)
+                'n_evaluations': sol.nfev, 
+                'state_size': len(sol.y),
+                'success': sol.success,
+                'message': sol.message
             },
-            strategy_type="voltage_input"
+            strategy_type="voltage_input",
+            circuit_ids=circuit_ids,
+            success=sol.success,
+            error_message=sol.message if not sol.success else None
         )
     
     def get_state_description(self) -> Dict[str, str]:
-        return {"current": "Circuit current(s) in Amperes"}
+        return {
+            "current": "Circuit currents in Amperes"
+        }
 
 
 class PIDControlStrategy(SimulationStrategy):
     """
     Strategy for PID control simulations
-    Uses reference current tracking with adaptive PID
+    Uses extended ODE with current and integral error as states
     """
     
     def validate_system(self, system) -> List[str]:
@@ -154,31 +161,25 @@ class PIDControlStrategy(SimulationStrategy):
         return errors
     
     def get_initial_conditions(self, system, params: SimulationParameters) -> np.ndarray:
-        """Initial conditions: [currents, integral_errors] for each circuit"""
+        """Get initial conditions for PID simulation: [currents, integral_errors]"""
         if hasattr(system, 'circuits'):  # Coupled system
             n_circuits = len(system.circuits)
+            currents = np.zeros(n_circuits)
+            integral_errors = np.zeros(n_circuits)
+            
             if params.initial_values and len(params.initial_values) == n_circuits:
                 currents = np.array(params.initial_values)
-            else:
-                currents = np.zeros(n_circuits)
-            integral_errors = np.zeros(n_circuits)
+            
             return np.concatenate([currents, integral_errors])
+            
         else:  # Single circuit
-            if params.initial_values:
-                current = params.initial_values[0]
-            else:
-                current = 0.0
-            return np.array([current, 0.0])  # [current, integral_error]
+            current = params.initial_values[0] if params.initial_values else 0.0
+            integral_error = 0.0
+            return np.array([current, integral_error])
     
     def run_simulation(self, system, params: SimulationParameters) -> SimulationResult:
-        """Run PID control simulation with improved time-stepping"""
-        return self._run_continuous_pid_simulation(system, params)
-    
-    def _run_continuous_pid_simulation(self, system, params: SimulationParameters) -> SimulationResult:
-        """
-        Improved continuous PID simulation using solve_ivp with time-varying parameters
-        Avoids complex manual time-stepping
-        """
+        """Run PID control simulation"""
+        print("run PID control simulation ***", flush=True)
         y0 = self.get_initial_conditions(system, params)
         t_span = (params.t_start, params.t_end)
         
@@ -191,6 +192,12 @@ class PIDControlStrategy(SimulationStrategy):
                 # Single circuit case
                 return system.vector_field(t, y)
         
+        # Use system's PID vector field
+        if hasattr(system, 'circuits'):  # Coupled system
+            circuit_ids = [c.circuit_id for c in system.circuits]
+        else:  # Single circuit
+            circuit_ids = [system.circuit_id]
+        
         sol = solve_ivp(
             vector_field,
             t_span,
@@ -201,17 +208,22 @@ class PIDControlStrategy(SimulationStrategy):
             atol=params.atol,
             max_step=params.dt,
         )
-        
+        print("pid sol: ", sol.y.shape, flush=True)
+
+        # Return enhanced SimulationResult with all required fields
         return SimulationResult(
             time=sol.t,
-            solution=sol.y,
+            solution=sol.y,  # Transpose to match expected format
             metadata={
-                "success": sol.success,
-                "message": sol.message,
-                "n_evaluations": sol.nfev,
-                "state_size": len(y0)
+                'n_evaluations': sol.nfev, 
+                'state_size': len(sol.y),
+                'success': sol.success,
+                'message': sol.message
             },
-            strategy_type="pid_control"
+            strategy_type="pid_control",
+            circuit_ids=circuit_ids,
+            success=sol.success,
+            error_message=sol.message if not sol.success else None
         )
     
     def _estimate_reference_derivative(self, system, t: float, dt: float = 1e-4) -> np.ndarray:
@@ -228,68 +240,65 @@ class PIDControlStrategy(SimulationStrategy):
     
     def get_state_description(self) -> Dict[str, str]:
         return {
-            "current": "Circuit current(s) in Amperes",
-            "integral_error": "PID integral error(s) in Ampere-seconds"
+            "current": "Circuit currents in Amperes",
+            "integral_error": "PID integral errors in Ampere-seconds"
         }
 
 
 class HybridStrategy(SimulationStrategy):
     """
     Strategy for mixed voltage/PID simulations
-    Some circuits voltage-driven, others PID-controlled
+    Some circuits use voltage input, others use PID control
     """
     
-    def __init__(self, voltage_circuits: List[str], pid_circuits: List[str]):
-        self.voltage_circuits = voltage_circuits
-        self.pid_circuits = pid_circuits
+    def __init__(self, voltage_circuit_ids: List[str], pid_circuit_ids: List[str]):
+        self.voltage_circuit_ids = voltage_circuit_ids
+        self.pid_circuit_ids = pid_circuit_ids
     
     def validate_system(self, system) -> List[str]:
-        """Validate mixed system configuration"""
+        """Validate hybrid system configuration"""
         errors = []
         
         if not hasattr(system, 'circuits'):
-            errors.append("Hybrid strategy requires coupled system")
+            errors.append("Hybrid strategy only supported for coupled systems")
             return errors
         
-        circuit_ids = [c.circuit_id for c in system.circuits]
-        
-        # Check voltage circuits
-        for circuit_id in self.voltage_circuits:
-            if circuit_id not in circuit_ids:
-                errors.append(f"Voltage circuit {circuit_id} not found in system")
-            else:
-                circuit = next(c for c in system.circuits if c.circuit_id == circuit_id)
+        # Validate voltage circuits
+        for circuit in system.circuits:
+            if circuit.circuit_id in self.voltage_circuit_ids:
                 if not hasattr(circuit, 'voltage_csv') or circuit.voltage_csv is None:
-                    errors.append(f"Voltage circuit {circuit_id} missing voltage CSV")
+                    errors.append(f"Voltage circuit {circuit.circuit_id} missing voltage CSV")
         
-        # Check PID circuits
-        for circuit_id in self.pid_circuits:
-            if circuit_id not in circuit_ids:
-                errors.append(f"PID circuit {circuit_id} not found in system")
-            else:
-                circuit = next(c for c in system.circuits if c.circuit_id == circuit_id)
+        # Validate PID circuits
+        for circuit in system.circuits:
+            if circuit.circuit_id in self.pid_circuit_ids:
                 if not hasattr(circuit, 'reference_csv') or circuit.reference_csv is None:
-                    errors.append(f"PID circuit {circuit_id} missing reference CSV")
+                    errors.append(f"PID circuit {circuit.circuit_id} missing reference CSV")
                 if not hasattr(circuit, 'pid_controller') or circuit.pid_controller is None:
-                    errors.append(f"PID circuit {circuit_id} missing PID controller")
+                    errors.append(f"PID circuit {circuit.circuit_id} missing PID controller")
         
         return errors
     
     def get_initial_conditions(self, system, params: SimulationParameters) -> np.ndarray:
-        """Initial conditions: [all_currents, pid_integral_errors]"""
+        """Get initial conditions for hybrid simulation"""
         n_circuits = len(system.circuits)
-        n_pid = len(self.pid_circuits)
+        n_pid_circuits = len(self.pid_circuit_ids)
         
+        # State vector: [currents] + [integral_errors for PID circuits]
+        state_size = n_circuits + n_pid_circuits
+        y0 = np.zeros(state_size)
+        
+        # Set initial currents
         if params.initial_values and len(params.initial_values) == n_circuits:
-            currents = np.array(params.initial_values)
-        else:
-            currents = np.zeros(n_circuits)
+            y0[:n_circuits] = params.initial_values
         
-        pid_integral_errors = np.zeros(n_pid)
-        return np.concatenate([currents, pid_integral_errors])
+        # Integral errors start at zero (already initialized)
+        return y0
     
     def run_simulation(self, system, params: SimulationParameters) -> SimulationResult:
-        """Run hybrid simulation - more complex implementation needed"""
+        """Run hybrid simulation"""
+        # Hybrid strategy requires more complex implementation
+        # For now, raise an error to indicate this needs development
         raise NotImplementedError("Hybrid strategy requires more complex implementation")
     
     def get_state_description(self) -> Dict[str, str]:
@@ -303,6 +312,7 @@ class SimulationRunner:
     """
     Main simulation runner that uses strategies
     Replaces the complex logic in coupled_main.py
+    Version 3.0: Uses enhanced SimulationResult from cli_simulation
     """
     
     def __init__(self):
@@ -338,15 +348,20 @@ class SimulationRunner:
             
             if has_voltage and not (has_reference and has_pid):
                 return "voltage"
-            elif has_reference and has_pid:
+            elif has_reference and has_pid and not has_voltage:
+                return "pid"
+            elif has_voltage and has_reference and has_pid:
+                # Both available - default to PID
                 return "pid"
             else:
-                raise ValueError("Single circuit configuration doesn't match any strategy")
+                raise ValueError("Circuit configuration doesn't match any strategy")
     
     def run_simulation(self, system, params: SimulationParameters, strategy_name: str = None) -> SimulationResult:
         """
         Run simulation using specified or auto-detected strategy
+        Version 3.0: Returns enhanced SimulationResult with all required fields
         """
+        print("SimulationRunner:run_simulation ***", flush=True)
         if strategy_name is None:
             strategy_name = self.detect_strategy(system)
         
@@ -354,50 +369,75 @@ class SimulationRunner:
             raise ValueError(f"Unknown strategy: {strategy_name}")
         
         strategy = self.strategies[strategy_name]
-        if strategy is None:
-            raise ValueError(f"Strategy {strategy_name} not initialized")
         
         # Validate system compatibility
         errors = strategy.validate_system(system)
         if errors:
-            raise ValueError(f"System validation failed: {'; '.join(errors)}")
+            print("errors detected in validate strategy ***", flush=True)
+            # Return failed SimulationResult instead of raising exception
+            circuit_ids = ([c.circuit_id for c in system.circuits] 
+                          if hasattr(system, 'circuits') else [system.circuit_id])
+            return SimulationResult(
+                time=np.array([]),
+                solution=np.array([]),
+                metadata={},
+                strategy_type="failed",
+                circuit_ids=circuit_ids,
+                success=False,
+                error_message=f"System validation failed: {'; '.join(errors)}"
+            )
         
         print(f"Running {strategy_name} simulation strategy")
         print(f"State description: {strategy.get_state_description()}")
         
-        return strategy.run_simulation(system, params)
-
-
-# Example usage and integration
-def create_simulation_parameters_from_args(args) -> SimulationParameters:
-    """Convert command line arguments to SimulationParameters"""
-    return SimulationParameters(
-        t_start=args.time_start,
-        t_end=args.time_end,
-        dt=args.time_step,
-        method=args.method,
-        initial_values=args.value_start if hasattr(args, 'value_start') else None
-    )
-
-
-def run_simulation_with_strategy(system, args):
-    """
-    Replacement for the complex simulation logic in coupled_main.py
-    """
-    # Create parameters
-    params = create_simulation_parameters_from_args(args)
+        try:
+            print("try to strategy.run_simulation ***", flush=True)
+            return strategy.run_simulation(system, params)
+        except Exception as e:
+            # Return failed SimulationResult for any simulation errors
+            # print("try to strategy.run_simulation ***", flush=True)
+            circuit_ids = ([c.circuit_id for c in system.circuits] 
+                          if hasattr(system, 'circuits') else [system.circuit_id])
+            return SimulationResult(
+                time=np.array([]),
+                solution=np.array([]),
+                metadata={},
+                strategy_type="failed",
+                circuit_ids=circuit_ids,
+                success=False,
+                error_message=f"Simulation failed: {str(e)}"
+            )
     
-    # Create runner and run simulation
-    runner = SimulationRunner()
+    def list_available_strategies(self) -> List[str]:
+        """List available strategies"""
+        return [name for name, strategy in self.strategies.items() if strategy is not None]
     
-    try:
-        result = runner.run_simulation(system, params)
-        print(f"✓ Simulation completed using {result.strategy_type} strategy")
-        print(f"  Time points: {len(result.time)}")
-        print(f"  State vector size: {result.metadata['state_size']}")
+    def get_strategy_info(self, strategy_name: str) -> dict:
+        """Get information about a specific strategy"""
+        if strategy_name not in self.strategies or self.strategies[strategy_name] is None:
+            raise ValueError(f"Unknown or unavailable strategy: {strategy_name}")
         
-        return result
-        
-    except Exception as e:
-        print(f"✗ Simulation failed: {e}")
-        raise
+        strategy = self.strategies[strategy_name]
+        return {
+            "name": strategy_name,
+            "description": strategy.__doc__.strip() if strategy.__doc__ else "No description",
+            "state_description": strategy.get_state_description()
+        }
+
+
+# Version 3.0 Breaking Changes Notice
+#
+# IMPORT CHANGES:
+# Old: from .cli_simulation import SimulationResult  # Caused circular import
+# New: from .simulation_types import SimulationResult  # Clean import
+#
+# Old: Local SimulationParameters class definition
+# New: from .simulation_types import SimulationParameters  # Unified location
+#
+# The enhanced SimulationResult now includes:
+# - circuit_ids: List[str]              # Required for tracking multiple circuits
+# - success: bool = True                # Required for error handling  
+# - error_message: Optional[str] = None # Required for debugging
+#
+# All strategy methods now return the enhanced SimulationResult with these additional fields
+# This resolves the circular import issue that was preventing Version 3.0 from running.

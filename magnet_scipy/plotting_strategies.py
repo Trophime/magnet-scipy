@@ -403,6 +403,8 @@ class PIDControlPlottingStrategy(PlottingStrategy):
         
         # Calculate reference current
         i_ref = np.array([circuit.reference_current(t_val) for t_val in t])
+        print("current:", current.shape)
+        print("i_ref:", i_ref.shape)
         
         # Calculate adaptive PID gains over time
         Kp_over_time, Ki_over_time, Kd_over_time = [], [], []
@@ -545,7 +547,6 @@ class PIDControlPlottingStrategy(PlottingStrategy):
             # Add region background (use first circuit's regions)
             if i == 0 and n_circuits == 1:
                 self.add_region_background(ax, results.time, data["regions"])
-                print(f"add_region data i={i}", flush=True)
             
             ax.plot(
                 results.time, data["current"],

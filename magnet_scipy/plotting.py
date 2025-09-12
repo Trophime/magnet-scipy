@@ -1,8 +1,8 @@
 """
 magnet_scipy/plotting.py
 
-Refactored plotting module using strategy pattern
-Maintains backward compatibility while providing cleaner architecture
+Version 3.0: Clean plotting module with backward compatibility functions removed
+Breaking changes: All legacy wrapper functions removed, only new system functions remain
 """
 
 import numpy as np
@@ -11,7 +11,6 @@ from typing import Dict, Tuple, Optional
 
 from .plotting_core import PlottingManager, PlottingAnalytics, ResultsFileManager
 from .plotting_strategies import PlotConfiguration
-from .utils import exp_metrics
 
 # Global plotting manager instance
 _plotting_manager = None
@@ -46,268 +45,114 @@ def configure_plotting(
     _plotting_manager = PlottingManager(config)
 
 
-# Backward compatible functions for single circuit
-def prepare_post(sol, circuit, mode: str = "regular") -> Tuple[np.ndarray, Dict]:
-    """
-    Prepare single circuit simulation results for plotting
-    
-    Args:
-        sol: Solution object from scipy.integrate.solve_ivp
-        circuit: RLCircuitPID instance
-        mode: "regular" for voltage simulation, "cde" for PID control
-        
-    Returns:
-        Tuple of (time_array, results_dict)
-    """
-    manager = get_plotting_manager()
-    strategy_type = "voltage_input" if mode == "regular" else "pid_control"
-    results, _ = manager.create_plots(
-        sol, circuit, strategy_type, show=False, show_analytics=False
-    )
-    
-    # Convert to old format for compatibility
-    circuit_id = circuit.circuit_id
-    data = results.circuits[circuit_id]
-    
-    return results.time, data
-
-
-def plot_vresults(
-    circuit,
-    t: np.ndarray,
-    data: Dict,
-    save_path: str = None,
-    show: bool = True,
-):
-    """
-    Plot voltage simulation results for single circuit
-    
-    Backward compatible wrapper that uses the new plotting system
-    """
-    # Create a fake solution object for the new system
-    class FakeSol:
-        def __init__(self, t, current):
-            self.t = t
-            if isinstance(current, dict):
-                self.y = current['current']
-            else:
-                self.y = current
-            self.success = True
-    
-    current = data.get('current', np.zeros_like(t))
-    sol = FakeSol(t, current)
-    
-    manager = get_plotting_manager()
-    manager.create_plots(
-        sol, circuit, "voltage_input", save_path, show, show_analytics=False
-    )
-
-
-def plot_results(
-    sol,
-    circuit,
-    t: np.ndarray,
-    data: Dict,
-    save_path: str = None,
-    show: bool = True,
-):
-    """
-    Plot PID control results for single circuit
-    
-    Backward compatible wrapper that uses the new plotting system
-    """
-    manager = get_plotting_manager()
-    manager.create_plots(
-        sol, circuit, "pid_control", save_path, show, show_analytics=False
-    )
-
-
-def analyze(circuit, t: np.ndarray, data: Dict):
-    """
-    Perform detailed analysis of single circuit simulation
-    
-    Backward compatible wrapper
-    """
-    # Create results structure for new analytics system
-    from .plotting_strategies import ProcessedResults
-    
-    circuits_data = {circuit.circuit_id: data}
-    
-    # Determine strategy type based on available data
-    if 'reference' in data and 'error' in data:
-        strategy_type = "pid_control"
-    else:
-        strategy_type = "voltage_input"
-    
-    results = ProcessedResults(
-        time=t,
-        circuits=circuits_data,
-        strategy_type=strategy_type,
-        metadata={}
-    )
-    
-    analytics = PlottingAnalytics.analyze_circuit_performance(results)
-    PlottingAnalytics.print_detailed_analytics(analytics)
-
-
-def save_results(
-    circuit,
-    t: np.ndarray,
-    results: Dict,
-    filename: str = "single_circuit_results.npz"
-):
-    """
-    Save single circuit results to file
-    
-    Backward compatible wrapper
-    """
-    from .plotting_strategies import ProcessedResults
-    
-    circuits_data = {circuit.circuit_id: results}
-    
-    # Determine strategy type
-    if 'reference' in results and 'error' in results:
-        strategy_type = "pid_control"
-    else:
-        strategy_type = "voltage_input"
-    
-    processed_results = ProcessedResults(
-        time=t,
-        circuits=circuits_data,
-        strategy_type=strategy_type,
-        metadata={"circuit_id": circuit.circuit_id}
-    )
-    
-    # Generate analytics for saving
-    analytics = PlottingAnalytics.analyze_circuit_performance(processed_results)
-    
-    ResultsFileManager.save_results(processed_results, analytics, filename)
-
-
-def load_results(filename: str):
-    """Load previously saved single circuit results"""
-    return ResultsFileManager.load_results(filename)
-
-
-# New advanced plotting functions
 def create_advanced_plots(
     sol,
     system,
     strategy_type: str = None,
     save_path: str = None,
     show: bool = True,
-    show_analytics: bool = False,
+    show_analytics: bool = True,
     config: PlotConfiguration = None
 ):
     """
-    Create advanced plots with full control over configuration
+    Create advanced plots using the new plotting system
     
     Args:
-        sol: Solution object
-        system: Circuit or coupled system
+        sol: Solution object from scipy.integrate.solve_ivp
+        system: Circuit or coupled system instance
         strategy_type: "voltage_input", "pid_control", or None for auto-detect
-        save_path: Path to save plots
-        show: Whether to show plots
-        show_analytics: Whether to print detailed analytics
-        config: Custom plot configuration
+        save_path: Path to save plots (optional)
+        show: Whether to display plots
+        show_analytics: Whether to display analytics
+        config: Custom plotting configuration
         
     Returns:
-        Tuple of (processed_results, analytics, figure)
+        Tuple of (ProcessedResults, analytics_dict)
     """
     manager = get_plotting_manager(config)
-    results, analytics = manager.create_plots(
+    return manager.create_plots(
         sol, system, strategy_type, save_path, show, show_analytics
     )
-    return results, analytics
 
 
 def create_comparison_plots(
-    results_list,
-    labels: list,
+    solutions_and_systems: list,
+    labels: list = None,
     save_path: str = None,
     show: bool = True,
     config: PlotConfiguration = None
 ):
     """
-    Create comparison plots between multiple simulation runs
+    Create comparison plots between multiple simulations
     
     Args:
-        results_list: List of (sol, system) tuples or ProcessedResults
-        labels: List of labels for each result
-        save_path: Path to save comparison plots
-        show: Whether to show plots
-        config: Custom plot configuration
+        solutions_and_systems: List of (sol, system) tuples
+        labels: Labels for each simulation (optional)
+        save_path: Path to save plots (optional)
+        show: Whether to display plots
+        config: Custom plotting configuration
         
     Returns:
-        Figure object
+        matplotlib Figure object
     """
     manager = get_plotting_manager(config)
-    
-    # Process results if needed
-    processed_results = []
-    for i, item in enumerate(results_list):
-        if hasattr(item, 'circuits'):  # Already ProcessedResults
-            processed_results.append((item, labels[i]))
-        else:
-            # Assume (sol, system) tuple
-            sol, system = item
-            results, _ = manager.create_plots(
-                sol, system, show=False, show_analytics=False
-            )
-            processed_results.append((results, labels[i]))
-    
-    return manager.create_comparison_plots(processed_results, save_path, show)
+    return manager.create_comparison_plots(
+        solutions_and_systems, labels, save_path, show
+    )
 
 
 def create_custom_plot(
-    data_dict: Dict,
-    plot_type: str,
-    title: str = "",
-    xlabel: str = "",
-    ylabel: str = "",
+    data_dict: Dict[str, Tuple[np.ndarray, np.ndarray]],
+    plot_type: str = "line",
+    title: str = "Custom Plot",
+    xlabel: str = "X",
+    ylabel: str = "Y",
     save_path: str = None,
     show: bool = True,
-    **kwargs
+    config: PlotConfiguration = None
 ):
     """
-    Create custom plots with user-provided data
+    Create custom plots with user-defined data
     
     Args:
         data_dict: Dictionary of {label: (x_data, y_data)} pairs
-        plot_type: "line", "scatter", "bar", etc.
+        plot_type: Type of plot ("line", "scatter", "bar")
         title: Plot title
         xlabel: X-axis label
         ylabel: Y-axis label
-        save_path: Path to save plot
-        show: Whether to show plot
-        **kwargs: Additional matplotlib arguments
-    """
-    manager = get_plotting_manager()
-    colors = manager.config.colors
-    
-    fig, ax = plt.subplots(figsize=manager.config.figsize)
-    
-    for i, (label, (x_data, y_data)) in enumerate(data_dict.items()):
-        color = colors[i % len(colors)]
+        save_path: Path to save plot (optional)
+        show: Whether to display plot
+        config: Custom plotting configuration
         
+    Returns:
+        matplotlib Figure object
+    """
+    if config:
+        plt.rcParams['figure.figsize'] = config.figsize
+        plt.rcParams['figure.dpi'] = config.dpi
+    
+    fig, ax = plt.subplots()
+    
+    for label, (x_data, y_data) in data_dict.items():
         if plot_type == "line":
-            ax.plot(x_data, y_data, color=color, label=label, 
-                   linewidth=manager.config.linewidth_main, **kwargs)
+            ax.plot(x_data, y_data, label=label)
         elif plot_type == "scatter":
-            ax.scatter(x_data, y_data, color=color, label=label, **kwargs)
+            ax.scatter(x_data, y_data, label=label)
         elif plot_type == "bar":
-            ax.bar(x_data, y_data, color=color, label=label, alpha=0.7, **kwargs)
+            ax.bar(x_data, y_data, label=label, alpha=0.7)
+        else:
+            raise ValueError(f"Unsupported plot type: {plot_type}")
     
     ax.set_title(title)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
-    ax.grid(True, alpha=manager.config.grid_alpha)
     ax.legend()
+    ax.grid(True, alpha=0.3)
     
     plt.tight_layout()
     
     if save_path:
-        fig.savefig(save_path, dpi=manager.config.dpi)
+        fig.savefig(save_path, dpi=config.dpi if config else 300)
         print(f"Custom plot saved to {save_path}")
     
     if show:
@@ -318,101 +163,56 @@ def create_custom_plot(
     return fig
 
 
-# Experimental data overlay utilities
-def add_experimental_overlay(
-    ax,
-    time_data: np.ndarray,
-    computed_data: np.ndarray,
-    exp_time: np.ndarray,
-    exp_data: np.ndarray,
-    label: str = "Experimental",
-    color: str = None
-):
-    """
-    Add experimental data overlay to an existing plot
-    
-    Args:
-        ax: Matplotlib axis object
-        time_data: Computed time array
-        computed_data: Computed data array
-        exp_time: Experimental time array
-        exp_data: Experimental data array
-        label: Label for experimental data
-        color: Color for experimental data (auto if None)
-    """
-    if color is None:
-        color = ax.get_lines()[-1].get_color()  # Use same color as last line
-    
-    # Plot experimental data
-    ax.plot(exp_time, exp_data, color=color, linestyle=":", 
-           alpha=0.7, linewidth=1.0, label=label)
-    
-    # Compute and display comparison metrics
-    rms_diff, mae_diff = exp_metrics(time_data, exp_time, computed_data, exp_data)
-    
-    ax.text(
-        0.02, 0.98,
-        f"RMS Diff: {rms_diff:.3f}\nMAE Diff: {mae_diff:.3f}",
-        transform=ax.transAxes,
-        verticalalignment="top",
-        bbox=dict(boxstyle="round,pad=0.3", facecolor="wheat", alpha=0.8)
-    )
-    
-    return rms_diff, mae_diff
+# Export clean API functions only
+__all__ = [
+    'get_plotting_manager',
+    'configure_plotting',
+    'create_advanced_plots',
+    'create_comparison_plots',
+    'create_custom_plot'
+]
 
 
-# Performance benchmarking utilities
-def benchmark_plotting_performance(sol, system, n_runs: int = 5):
-    """
-    Benchmark plotting performance
-    
-    Args:
-        sol: Solution object
-        system: Circuit system
-        n_runs: Number of runs for averaging
-        
-    Returns:
-        Dictionary with timing information
-    """
-    import time
-    
-    manager = get_plotting_manager()
-    
-    # Warm up
-    manager.create_plots(sol, system, show=False, show_analytics=False)
-    
-    # Benchmark data preparation
-    prep_times = []
-    for _ in range(n_runs):
-        start = time.perf_counter()
-        strategy_type = manager.detect_strategy(sol, system)
-        strategy = manager.strategies[strategy_type]
-        results = strategy.prepare_data(sol, system)
-        end = time.perf_counter()
-        prep_times.append(end - start)
-    
-    # Benchmark plot creation
-    plot_times = []
-    for _ in range(n_runs):
-        start = time.perf_counter()
-        strategy.create_plots(results, system, show=False)
-        end = time.perf_counter()
-        plot_times.append(end - start)
-    
-    return {
-        "data_preparation": {
-            "mean": np.mean(prep_times),
-            "std": np.std(prep_times),
-            "min": np.min(prep_times),
-            "max": np.max(prep_times)
-        },
-        "plot_creation": {
-            "mean": np.mean(plot_times),
-            "std": np.std(plot_times),
-            "min": np.min(plot_times),
-            "max": np.max(plot_times)
-        },
-        "total": {
-            "mean": np.mean(prep_times) + np.mean(plot_times)
-        }
-    }
+# Version 3.0 Breaking Changes Notice
+#
+# REMOVED FUNCTIONS (no longer available):
+# - prepare_post() → Use create_advanced_plots()
+# - plot_vresults() → Use create_advanced_plots() with strategy_type="voltage_input"
+# - plot_results() → Use create_advanced_plots() with strategy_type="pid_control"
+# - analyze() → Analytics integrated into create_advanced_plots()
+#
+# MIGRATION GUIDE:
+#
+# Old voltage plotting:
+#   t, data = prepare_post(sol, circuit, mode="regular")
+#   plot_vresults(circuit, t, data, save_path="plot.png")
+#
+# New voltage plotting:
+#   processed_results, analytics = create_advanced_plots(
+#       sol, circuit, 
+#       strategy_type="voltage_input",
+#       save_path="plot.png",
+#       show_analytics=True
+#   )
+#
+# Old PID plotting:
+#   t, data = prepare_post(sol, circuit, mode="cde")
+#   plot_results(sol, circuit, t, data, save_path="plot.png")
+#
+# New PID plotting:
+#   processed_results, analytics = create_advanced_plots(
+#       sol, circuit,
+#       strategy_type="pid_control", 
+#       save_path="plot.png",
+#       show_analytics=True
+#   )
+#
+# Old analytics:
+#   analyze(circuit, t, data)
+#
+# New analytics (integrated):
+#   processed_results, analytics = create_advanced_plots(
+#       sol, circuit,
+#       show_analytics=True
+#   )
+#   # Analytics are automatically displayed and returned in analytics dict
