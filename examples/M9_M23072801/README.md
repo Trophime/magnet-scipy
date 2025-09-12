@@ -99,8 +99,16 @@ NB: to extract data as csv
 
 ```bash
 python -m python_magnetrun.python_magnetrun M9_2023.09.16---17\:55\:22.txt select --output_key UH UB TinH TinB FlowH FlowB teb debitbrut
+python -m python_magnetrun.python_magnetrun M9_2023.09.16---17\:55\:22.txt select --output_key TinH
+python -m python_magnetrun.python_magnetrun M9_2023.09.16---17\:55\:22.txt select --output_key TinB
 python -m python_magnetrun.python_magnetrun M9_M23072801/M9_Overview_230916-1755.tdms select --output_key Courants_Alimentations/Courant_GR1 Courants_Alimentations/Courant_GR2 
 ```
+
+For data comming from `pupitre` format, we need to smooth then before export and consider a shift to account for the difference en time between `pupitre` and `pigbrother`.
+
+You can also extract input data - aka voltage or reference currents - using signature (see magnetrun)
+There is a problem in signature connected with eco mode (U sequence is not necessary linear - introduce several U instead??)
+
 ## inital conditions
 
 "i0": "IH": -6.32 A, "IB": 4.04 A for M9_2023.09.16---17:55:22.txt, M9_Overview_230916-1755.tdms

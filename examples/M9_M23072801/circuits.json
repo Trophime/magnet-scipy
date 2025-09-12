@@ -1,5 +1,5 @@
 {
-  "name": "M9_xxx",
+  "name": "M9_M23072801",
   "circuits": [
     {
       "circuit_id": "M23072801",
@@ -19,7 +19,14 @@
         "Kd_high": 0.0,
         "low_threshold": 60,
         "high_threshold": 800
-      }
+      },
+      "experiment_data": [
+        {
+          "type": "current",
+          "key": "current",
+          "file": "M9_Overview_230916-1755_Courants_Alimentations_Courant_GR1_vs_Time.csv"
+        }
+      ]
     },
     {
       "circuit_id": "M9Bitters_18MW",
@@ -39,7 +46,14 @@
         "Kd_high": 0,
         "low_threshold": 60,
         "high_threshold": 800
-      }
+      },
+      "experiment_data": [
+        {
+          "type": "current",
+          "key": "current",
+          "file": "M9_Overview_230916-1755_Courants_Alimentations_Courant_GR2_vs_Time.csv"
+        }
+      ]
     }
   ],
   "mutual_inductances": [0.001965]

@@ -19,10 +19,9 @@ def create_function_from_csv(
     Returns:
         Tuple of (scipy_function, x_data, y_data)
     """
-
     # Load CSV data
-    df = pd.read_csv(csv_file_path)
-
+    df = pd.read_csv(csv_file_path, sep=None, engine="python")
+    
     # Extract and sort data by x values
     df_sorted = df.sort_values(x_column)
     x_data = df_sorted[x_column].values
@@ -59,7 +58,7 @@ def create_2d_function_from_csv(
     """
 
     # Load CSV data
-    df = pd.read_csv(csv_file_path)
+    df = pd.read_csv(csv_file_path, sep=None, engine="python")
 
     # Extract data
     x_data = df[x_column].values
@@ -184,7 +183,7 @@ def create_multi_column_function_from_csv(
     """
 
     # Load CSV data
-    df = pd.read_csv(csv_file_path)
+    df = pd.read_csv(csv_file_path, sep=None, engine="python")
 
     # Extract and sort data by x values
     df_sorted = df.sort_values(x_column)
@@ -230,7 +229,7 @@ def create_parametric_function_from_csv(
     """
 
     # Load CSV data
-    df = pd.read_csv(csv_file_path)
+    df = pd.read_csv(csv_file_path, sep=None, engine="python")
 
     # Extract data
     param_data = df[param_column].values

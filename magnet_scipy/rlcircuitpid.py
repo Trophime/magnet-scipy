@@ -181,7 +181,7 @@ class RLCircuitPID:
 
     def experimental_data_with_data_type(self, data_type: str):
         """returns keys associated to experimental_data with a given data_type"""
-        return [exp["key"] for exp in self.experiment_data if exp["type"] == data_type]
+        return [exp["key"] for exp in self.experimental_data if exp["type"] == data_type]
 
     def has_experimental_data(self, data_type: str, key: str = None) -> bool:
         """Check if experimental data exists for given type and optionally key"""
@@ -269,13 +269,13 @@ class RLCircuitPID:
         print(f"loading temperature from csv {csv_file}")
         try:
             self.temperature_func, self.temperature_time_data, self.temperature_data = (
-                create_function_from_csv(csv_file, "time", method="linear")
+                create_function_from_csv(csv_file, "time", "temperature", method="linear")
             )
 
             self.use_variable_temperature = True
             print(f"Loaded temperature {csv_file} using Scipy interpolation")
             print(
-                f"Temperature Time range: {float(self.time_data[0]):.3f} to {float(self.time_data[-1]):.3f} seconds"
+                f"Temperature Time range: {float(self.temperature_time_data[0]):.3f} to {float(self.temperature_time_data[-1]):.3f} seconds"
             )
 
         except Exception as e:

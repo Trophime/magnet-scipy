@@ -151,10 +151,10 @@ pytest -m "not slow"    # Skip slow tests
 Test structure:
 ```
 tests/
-├── test_pid_controller.py     # PID controller tests
+├── test_pid_controller.py    # PID controller tests
 ├── test_rlcircuitpid.py      # Single circuit tests  
 ├── test_coupled_circuits.py  # Coupled system tests
-├── test_jax_csv_utils.py     # CSV utilities tests
+├── test_csv_utils.py         # CSV utilities tests
 ├── conftest.py               # Test configuration
 └── data/                     # Test data files
 ```
@@ -173,6 +173,7 @@ Main class for single RL circuit with adaptive PID control.
 - `reference_csv`: Path to reference current CSV
 - `resistance_csv`: Path to resistance data CSV  
 - `temperature`: Operating temperature (°C)
+- `temperature_csv`: Path to Operating temperature (°C)
 - `circuit_id`: Unique circuit identifier
 
 #### `CoupledRLCircuitsPID`  
@@ -180,8 +181,7 @@ Container for multiple magnetically coupled RL circuits.
 
 **Parameters:**
 - `circuits`: List of RLCircuitPID instances
-- `mutual_inductances`: NxN coupling matrix
-- `coupling_strength`: Default coupling value
+- `mutual_inductances`: Nx(N+1)/2 -N mutual inductances as an array
 
 #### `PIDController`
 Flexible adaptive PID controller with region-based parameters.

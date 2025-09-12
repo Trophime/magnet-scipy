@@ -19,7 +19,19 @@
         "Kd_high": 0.0,
         "low_threshold": 60,
         "high_threshold": 800
-      }
+      },
+      "experiment_data": [
+        {
+          "type": "voltage",
+          "key": "voltage",
+          "file": "M19_Overview_240208-0941_voltage.csv"
+        },
+        {
+          "type": "current",
+          "key": "current",
+          "file": "M19_Overview_240208-0941_current.csv"
+        }
+      ]
     }
   ],
   "mutual_inductances": []

@@ -3,7 +3,7 @@
   "circuits": [
     {
       "circuit_id": "M23072801",
-      "temperature": 25.0,
+      "temperature_csv": "M9_2023.09.16---17:55:22_TinB_vs_Time.csv",
       "inductance": 0.002315,
       "resistance_csv": "Rtot_14Helices.csv",
       "reference_csv": "M9_Overview_230916-1755-Courants_Alimentations_Référence_GR1.csv",
@@ -35,7 +35,7 @@
     },
     {
       "circuit_id": "M9Bitters_18MW",
-      "temperature": 25.0,
+      "temperature_csv": "M9_2023.09.16---17:55:22_TinB_vs_Time.csv",
       "inductance": 0.01254,
       "resistance_csv": "Rtot_M9Bitters_18MW.csv",
       "reference_csv": "M9_Overview_230916-1755-Courants_Alimentations_Référence_GR2.csv",

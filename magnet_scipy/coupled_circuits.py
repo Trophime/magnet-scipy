@@ -224,15 +224,6 @@ class CoupledRLCircuitsPID:
 
         return np.concatenate([di_dt, dintegral_dt])
 
-    def get_initial_conditions(self, mode: str = "regular") -> np.ndarray:
-        """Get initial conditions for all circuits"""
-        # Each circuit: [current] if mode="regular", [current, integral_error] other wise
-        if mode == "regular":
-            y0 = np.zeros(self.n_circuits)
-        else:
-            y0 = np.zeros(self.n_circuits * 2)
-        return y0
-
     def print_configuration(self):
         """Print configuration of all circuits and coupling"""
         print("\n=== Coupled RL Circuits Configuration ===")
