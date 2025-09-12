@@ -3,7 +3,7 @@
   "circuits": [
     {
       "circuit_id": "M23072801",
-      "temperature_csv": "M9_2023.09.16---17:55:22_TinB_vs_Time.csv",
+      "temperature_csv": "M9_2023.09.16---17:55:22_TinH_vs_Time.csv",
       "inductance": 0.002315,
       "resistance_csv": "Rtot_14Helices.csv",
       "reference_csv": "M9_Overview_230916-1755-Courants_Alimentations_Référence_GR1.csv",
