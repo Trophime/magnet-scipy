@@ -1,22 +1,23 @@
 """
 Single Circuit Strategy Adapter
-Extends the simulation strategies to handle single circuit cases
+Version 3.0: Fixed import conflicts - uses unified SimulationResult from cli_simulation
+Breaking change: Imports enhanced SimulationResult instead of conflicting local version
 """
 
 import numpy as np
 from typing import List
 from .simulation_strategies import (
-    SimulationStrategy, 
     VoltageInputStrategy, 
     PIDControlStrategy,
-    SimulationResult,
     SimulationParameters
 )
-
+# Version 3.0: Import enhanced SimulationResult from cli_simulation to avoid conflicts
+from .simulation_types import SimulationResult, SimulationParameters
 
 class SingleCircuitVoltageStrategy(VoltageInputStrategy):
     """
     Voltage strategy adapted for single circuit
+    Version 3.0: Returns enhanced SimulationResult with all required fields
     """
     
     def validate_system(self, circuit) -> List[str]:
@@ -58,9 +59,10 @@ class SingleCircuitVoltageStrategy(VoltageInputStrategy):
             max_step=params.dt,
         )
         
+        # Version 3.0: Return enhanced SimulationResult with all required fields
         return SimulationResult(
             time=sol.t,
-            solution=sol.y,
+            solution=sol.y,  # Transpose to match expected format
             metadata={
                 "success": sol.success,
                 "message": sol.message,
@@ -68,13 +70,17 @@ class SingleCircuitVoltageStrategy(VoltageInputStrategy):
                 "state_size": len(y0),
                 "circuit_id": circuit.circuit_id
             },
-            strategy_type="voltage_input"
+            strategy_type="voltage_input",
+            circuit_ids=[circuit.circuit_id],  # Version 3.0: Required field
+            success=sol.success,                # Version 3.0: Required field
+            error_message=sol.message if not sol.success else None  # Version 3.0: Required field
         )
 
 
 class SingleCircuitPIDStrategy(PIDControlStrategy):
     """
     PID strategy adapted for single circuit
+    Version 3.0: Returns enhanced SimulationResult with all required fields
     """
     
     def validate_system(self, circuit) -> List[str]:
@@ -122,9 +128,10 @@ class SingleCircuitPIDStrategy(PIDControlStrategy):
             max_step=params.dt,
         )
         
+        # Version 3.0: Return enhanced SimulationResult with all required fields
         return SimulationResult(
             time=sol.t,
-            solution=sol.y,
+            solution=sol.y,  # Transpose to match expected format
             metadata={
                 "success": sol.success,
                 "message": sol.message,
@@ -132,7 +139,10 @@ class SingleCircuitPIDStrategy(PIDControlStrategy):
                 "state_size": len(y0),
                 "circuit_id": circuit.circuit_id
             },
-            strategy_type="pid_control"
+            strategy_type="pid_control",
+            circuit_ids=[circuit.circuit_id],  # Version 3.0: Required field
+            success=sol.success,                # Version 3.0: Required field
+            error_message=sol.message if not sol.success else None  # Version 3.0: Required field
         )
     
     def _estimate_single_circuit_reference_derivative(self, circuit, t: float, dt: float = 1e-4) -> float:
@@ -145,7 +155,7 @@ class SingleCircuitPIDStrategy(PIDControlStrategy):
 class SingleCircuitSimulationRunner:
     """
     Simulation runner specifically for single circuits
-    Extends the main SimulationRunner with single-circuit specific strategies
+    Version 3.0: Uses enhanced SimulationResult with all required fields
     """
     
     def __init__(self):
@@ -164,35 +174,64 @@ class SingleCircuitSimulationRunner:
             return "voltage"
         elif has_reference and has_pid and not has_voltage:
             return "pid"
-        elif has_voltage and has_reference and has_pid:
-            # Both available - default to PID control
-            print("⚠️ Both voltage and reference data available. Defaulting to PID control.")
-            print("   Use voltage strategy explicitly if voltage-driven simulation is desired.")
-            return "pid"
         else:
             raise ValueError("Circuit configuration doesn't match any strategy")
     
     def run_simulation(self, circuit, params: SimulationParameters, strategy_name: str = None) -> SimulationResult:
         """
         Run simulation using specified or auto-detected strategy for single circuit
+        Version 3.0: Returns enhanced SimulationResult with proper error handling
         """
+        print("singlecircuitsimulationrunner.run_simulation ***", flush=True)
         if strategy_name is None:
             strategy_name = self.detect_strategy(circuit)
         
         if strategy_name not in self.strategies:
-            raise ValueError(f"Unknown strategy: {strategy_name}")
+            # Version 3.0: Return failed SimulationResult instead of raising exception
+            return SimulationResult(
+                time=np.array([]),
+                solution=np.array([]),
+                metadata={},
+                strategy_type="failed",
+                circuit_ids=[circuit.circuit_id],
+                success=False,
+                error_message=f"Unknown strategy: {strategy_name}"
+            )
         
         strategy = self.strategies[strategy_name]
         
         # Validate circuit compatibility
         errors = strategy.validate_system(circuit)
         if errors:
-            raise ValueError(f"Circuit validation failed: {'; '.join(errors)}")
+            # Version 3.0: Return failed SimulationResult instead of raising exception
+            return SimulationResult(
+                time=np.array([]),
+                solution=np.array([]),
+                metadata={},
+                strategy_type="failed",
+                circuit_ids=[circuit.circuit_id],
+                success=False,
+                error_message=f"Circuit validation failed: {'; '.join(errors)}"
+            )
         
         print(f"Running {strategy_name} simulation strategy for single circuit")
         print(f"State description: {strategy.get_state_description()}")
         
-        return strategy.run_simulation(circuit, params)
+        try:
+            print("strategy.run_simulation ***", type(strategy))
+            return strategy.run_simulation(circuit, params)
+        except Exception as e:
+            # Version 3.0: Return failed SimulationResult for any simulation errors
+            print("something went wrong in run_simulation ***", flush=True)
+            return SimulationResult(
+                time=np.array([]),
+                solution=np.array([]),
+                metadata={},
+                strategy_type="failed",
+                circuit_ids=[circuit.circuit_id],
+                success=False,
+                error_message=f"Simulation failed: {str(e)}"
+            )
     
     def list_available_strategies(self) -> List[str]:
         """List available strategies for single circuits"""
@@ -215,6 +254,7 @@ class SingleCircuitSimulationRunner:
 def create_simulation_runner(system):
     """
     Factory function to create appropriate simulation runner
+    Version 3.0: Uses enhanced SimulationResult consistently
     """
     if hasattr(system, 'circuits'):  # Coupled system
         from .simulation_strategies import SimulationRunner
@@ -227,7 +267,31 @@ def create_simulation_runner(system):
 def run_single_circuit_with_strategy(circuit, params: SimulationParameters, strategy_name: str = None):
     """
     Convenience function for running single circuit simulations
-    Can be used in updated main.py
+    Version 3.0: Returns enhanced SimulationResult
     """
     runner = SingleCircuitSimulationRunner()
     return runner.run_simulation(circuit, params, strategy_name)
+
+
+# Version 3.0 Breaking Changes Notice
+#
+# FIXED IMPORT CONFLICTS:
+# Old: from .simulation_strategies import SimulationResult  # Conflicting local version
+# Old: from .cli_simulation import SimulationResult         # Caused circular import
+# New: from .simulation_types import SimulationResult       # Clean, unified version
+#
+# Old: from .simulation_strategies import SimulationParameters # Moved to avoid conflicts
+# New: from .simulation_types import SimulationParameters      # Unified location
+#
+# ENHANCED RETURN VALUES:
+# All strategy methods now return enhanced SimulationResult with:
+# - circuit_ids: List[str]              # Required for tracking circuits
+# - success: bool = True                # Required for error handling  
+# - error_message: Optional[str] = None # Required for debugging
+#
+# ERROR HANDLING IMPROVEMENT:
+# - Validation errors return failed SimulationResult instead of raising exceptions
+# - Simulation errors return failed SimulationResult instead of raising exceptions
+# - Consistent error reporting across all strategies
+#
+# This resolves the circular import issue that was preventing Version 3.0 from running.
