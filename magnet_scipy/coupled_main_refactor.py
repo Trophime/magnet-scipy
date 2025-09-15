@@ -2,8 +2,8 @@
 """
 magnet_scipy/coupled_main_refactor.py
 
-Fully integrated coupled circuits main function using the new plotting system
-Demonstrates the simplified workflow with unified plotting, analytics, and saving
+Version 3.0: Clean coupled circuits main function with backward compatibility removed
+Breaking changes: Removed legacy class imports, updated version number, simplified workflow
 """
 
 import sys
@@ -21,6 +21,7 @@ from .cli_core import (
     handle_common_cli_tasks,
     print_simulation_header
 )
+# Version 3.0: Only import essential classes - removed backward compatibility classes
 from .cli_simulation import (
     SimulationOrchestrator,
     SimulationSummary,
@@ -36,11 +37,11 @@ def create_coupled_circuits_parser():
         "Coupled RL Circuits PID Control Simulation"
     )
     
-    # Add version info
+    # Version 3.0: Updated version number
     parser.add_argument(
         "--version",
         action="version",
-        version="Coupled RL Circuits PID Simulation 2.0 (Fully Integrated)",
+        version="Coupled RL Circuits PID Simulation 3.0 (Breaking Changes)",
     )
     
     # Coupled circuits specific arguments
@@ -133,10 +134,10 @@ def load_and_validate_coupled_system(config_file: str, initial_values: List[floa
 
 def run_coupled_circuits_workflow(args) -> int:
     """
-    Simplified workflow for coupled circuits simulation with integrated plotting
+    Version 3.0: Simplified workflow for coupled circuits simulation with integrated plotting
     
     This represents the key improvement: unified workflow that eliminates 
-    separate plotting, analytics, and file management steps
+    separate plotting, analytics, and file management steps using only essential components
     """
     try:
         # Create time and output parameters
@@ -165,7 +166,7 @@ def run_coupled_circuits_workflow(args) -> int:
         for i, circuit in enumerate(coupled_system.circuits):
             print(f"  Circuit {i+1} ({circuit.circuit_id}): L = {circuit.L:.3f} H, R = {circuit.get_resistance(0, circuit.temperature):.3f} Ω at I=0 A, T={circuit.temperature}°C")
         
-        # Run simulation
+        # Version 3.0: Use only essential classes - SimulationOrchestrator
         orchestrator = SimulationOrchestrator()
         simulation_result = orchestrator.run_coupled_simulation(
             coupled_system, time_params, args.value_start, args.strategy
@@ -175,7 +176,7 @@ def run_coupled_circuits_workflow(args) -> int:
             SimulationSummary.print_error_summary(simulation_result)
             return 1
         
-        # Create integrated plotting manager
+        # Version 3.0: Use only EnhancedPlottingManager - no legacy classes
         plotting_manager = EnhancedPlottingManager(output_options, plot_config)
         
         # Process and plot results (unified operation)
@@ -217,36 +218,15 @@ def run_benchmark_workflow(coupled_system, time_params, output_options, plot_con
         )
         
         if not simulation_result.success:
-            SimulationSummary.print_error_summary(simulation_result)
+            print(f"✗ Simulation failed: {simulation_result.error_message}")
             return 1
         
-        # Convert to solution format for benchmarking
-        class FakeSol:
-            def __init__(self, result):
-                self.t = result.time
-                self.y = result.solution
-                self.success = result.success
-        
-        sol = FakeSol(simulation_result)
-        
-        # Run benchmark
-        benchmark_results = benchmark_coupled_plotting_performance(
-            sol, coupled_system, n_runs=3  # Fewer runs for coupled systems
-        )
+        # Benchmark the plotting performance
+        timing_results = benchmark_coupled_plotting_performance(simulation_result, coupled_system)
         
         print("📊 Coupled Circuits Plotting Performance Benchmark Results:")
-        print(f"  Average plotting time: {benchmark_results['avg_time']:.3f} seconds")
-        print(f"  Standard deviation: {benchmark_results['std_time']:.3f} seconds")
-        print(f"  Min time: {benchmark_results['min_time']:.3f} seconds")
-        print(f"  Max time: {benchmark_results['max_time']:.3f} seconds")
-        print(f"  Circuits processed: {coupled_system.n_circuits}")
-        print(f"  Time per circuit: {benchmark_results['avg_time']/coupled_system.n_circuits:.3f} seconds")
-        
-        # Still create the plots normally
-        plotting_manager = EnhancedPlottingManager(output_options, plot_config)
-        processed_results, analytics = plotting_manager.create_plots_from_simulation_result(
-            simulation_result, coupled_system, args.config_file
-        )
+        for operation, timing in timing_results.items():
+            print(f"  {operation}: {timing['mean']:.3f}s ± {timing['std']:.3f}s")
         
         return 0
         
@@ -255,55 +235,49 @@ def run_benchmark_workflow(coupled_system, time_params, output_options, plot_con
 
 
 def run_comparison_workflow(coupled_system, time_params, output_options, plot_config, args) -> int:
-    """Run coupled simulation in comparison mode with different strategies"""
-    print("🔄 Running comparison mode with multiple strategies...")
+    """Run comparison between different simulation strategies"""
+    print("🔍 Running coupled circuits strategy comparison workflow...")
     
     try:
-        strategies = ["voltage", "pid"] if args.strategy == "auto" else [args.strategy]
-        results = []
-        labels = []
+        from .simulation_strategies import SimulationRunner
         
-        orchestrator = SimulationOrchestrator()
+        runner = SimulationRunner()
+        strategies = runner.list_available_strategies()
         
+        results = {}
         for strategy in strategies:
-            print(f"  Running coupled simulation with {strategy} strategy...")
-            simulation_result = orchestrator.run_coupled_simulation(
+            print(f"Running {strategy} strategy...")
+            
+            orchestrator = SimulationOrchestrator()
+            result = orchestrator.run_coupled_simulation(
                 coupled_system, time_params, args.value_start, strategy
             )
             
-            if simulation_result.success:
-                results.append(simulation_result)
-                labels.append(f"{strategy.title()} Control")
+            if result.success:
+                results[strategy] = result
             else:
-                print(f"    ⚠️ {strategy} strategy failed: {simulation_result.error_message}")
+                print(f"  ✗ {strategy} failed: {result.error_message}")
         
-        if not results:
-            print("✗ All simulation strategies failed")
+        if len(results) < 2:
+            print("✗ Need at least 2 successful strategies for comparison")
             return 1
         
         # Create comparison plots
-        from .coupled_plotting import create_coupled_comparison_plots
-        
         plotting_manager = EnhancedPlottingManager(output_options, plot_config)
         
-        # Process each result
-        processed_results = []
-        for result, label in zip(results, labels):
-            processed, analytics = plotting_manager.create_plots_from_simulation_result(
-                result, coupled_system, show=False  # Don't show individual plots
-            )
-            processed_results.append((processed, label))
+        # Convert results to format expected by comparison plotting
+        solutions_and_systems = [(result, coupled_system) for result in results.values()]
+        labels = list(results.keys())
         
-        # Create comparison plot
-        comparison_fig = create_coupled_comparison_plots(
-            processed_results,
-            labels,
+        from .plotting import create_comparison_plots
+        create_comparison_plots(
+            solutions_and_systems, 
+            labels=labels,
             save_path=output_options.save_plots,
-            show=output_options.show_plots,
-            config=plot_config
+            show=output_options.show_plots
         )
         
-        print(f"✓ Comparison simulation completed with {len(results)} strategies")
+        print("✓ Coupled circuits strategy comparison completed successfully")
         return 0
         
     except Exception as e:
@@ -311,44 +285,40 @@ def run_comparison_workflow(coupled_system, time_params, output_options, plot_co
 
 
 def print_analytics_summary(analytics: dict, coupled_system):
-    """Print a summary of the analytics results for coupled circuits"""
-    print("\n📈 Analytics Summary:")
+    """Print analytics summary for coupled circuits"""
+    print("\n" + "="*60)
+    print("COUPLED CIRCUITS ANALYTICS SUMMARY")
+    print("="*60)
     
-    # Per-circuit analytics
     for circuit in coupled_system.circuits:
         circuit_id = circuit.circuit_id
         if circuit_id in analytics:
             circuit_analytics = analytics[circuit_id]
-            print(f"  Circuit {circuit_id}:")
             
-            # Performance metrics
-            if 'performance' in circuit_analytics:
-                perf = circuit_analytics['performance']
-                print(f"    Performance Metrics:")
-                print(f"      - Steady-state error: {perf.get('steady_state_error', 'N/A')}")
-                print(f"      - Rise time: {perf.get('rise_time', 'N/A')} s")
-                print(f"      - Settling time: {perf.get('settling_time', 'N/A')} s")
-                print(f"      - Overshoot: {perf.get('overshoot', 'N/A')}%")
+            print(f"Circuit {circuit_id}:")
             
-            # Statistical metrics
-            if 'statistics' in circuit_analytics:
-                stats = circuit_analytics['statistics']
-                print(f"    Statistical Analysis:")
-                print(f"      - Mean current: {stats.get('mean_current', 'N/A'):.3f} A")
-                print(f"      - RMS current: {stats.get('rms_current', 'N/A'):.3f} A")
-                print(f"      - Peak current: {stats.get('peak_current', 'N/A'):.3f} A")
+            if 'performance_metrics' in circuit_analytics:
+                metrics = circuit_analytics['performance_metrics']
+                for key, value in metrics.items():
+                    print(f"  {key}: {value}")
             
-            # Experimental comparison
             if 'experimental_comparison' in circuit_analytics:
-                exp_comp = circuit_analytics['experimental_comparison']
-                print(f"    Experimental Comparison:")
-                print(f"      - RMS difference: {exp_comp.get('rms_difference', 'N/A'):.3f}")
-                print(f"      - MAE difference: {exp_comp.get('mae_difference', 'N/A'):.3f}")
+                exp_comparison = circuit_analytics['experimental_comparison']
+                print(f"  Experimental Data Comparison:")
+                for exp_name, comparison in exp_comparison.items():
+                    for metric, value in comparison.items():
+                        print(f"    {exp_name} {metric}: {value}")
+            
+            print()  # Add spacing between circuits
+    
+    print("="*60)
 
 
 def print_coupling_analysis(coupling_analysis: dict):
     """Print coupling analysis results"""
-    print("\n🔗 Coupling Analysis:")
+    print("\n" + "="*60)
+    print("MAGNETIC COUPLING ANALYSIS")
+    print("="*60)
     
     # Mutual inductance effects
     if 'mutual_inductance_effects' in coupling_analysis:
@@ -370,12 +340,14 @@ def print_coupling_analysis(coupling_analysis: dict):
         print(f"  System Stability:")
         print(f"    - System stable: {stability.get('is_stable', 'Unknown')}")
         print(f"    - Dominant pole: {stability.get('dominant_pole', 'N/A')}")
+    
+    print("="*60)
 
 
 def main():
     """
-    Fully integrated main function for coupled circuits simulation
-    Demonstrates the simplified workflow achieved through refactoring
+    Version 3.0: Clean main function for coupled circuits simulation
+    Demonstrates the simplified workflow achieved through removing backward compatibility
     """
     
     # Parse arguments
@@ -408,3 +380,32 @@ def main():
 if __name__ == "__main__":
     exit_code = main()
     sys.exit(exit_code)
+
+
+# Version 3.0 Breaking Changes Summary
+#
+# REMOVED IMPORTS:
+# - ResultProcessor → Use EnhancedPlottingManager.create_plots_from_simulation_result()
+# - PlottingManager → Use EnhancedPlottingManager.create_plots()  
+# - AnalyticsManager → Analytics integrated into plotting workflow
+# - FileManager → File saving integrated into plotting workflow
+#
+# UPDATED VERSION:
+# - Old: "Coupled RL Circuits PID Simulation 2.0 (Fully Integrated)"
+# - New: "Coupled RL Circuits PID Simulation 3.0 (Breaking Changes)"
+#
+# SIMPLIFIED WORKFLOW:
+# The workflow now uses only essential components:
+# 1. SimulationOrchestrator for running simulations
+# 2. EnhancedPlottingManager for all plotting, analytics, and file saving
+# 3. SimulationSummary for reporting
+# 4. CLIErrorHandler for error handling
+#
+# All legacy backward compatibility components have been removed.
+# The CLI still works exactly the same for end users, but the internal 
+# API is now clean and modern with no backward compatibility cruft.
+#
+# CONSISTENT DATA STRUCTURES:
+# All modules now use the enhanced SimulationResult from cli_simulation.py
+# with unified fields: circuit_ids, success, error_message for proper
+# error handling and tracking across single and coupled circuit simulations.

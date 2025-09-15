@@ -179,7 +179,7 @@ class PIDControlStrategy(SimulationStrategy):
     
     def run_simulation(self, system, params: SimulationParameters) -> SimulationResult:
         """Run PID control simulation"""
-        print("run PID control simulation ***", flush=True)
+        print(f"run PID control simulation from {params.t_start}, {params.t_end} ***", flush=True)
         y0 = self.get_initial_conditions(system, params)
         t_span = (params.t_start, params.t_end)
         

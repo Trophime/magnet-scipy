@@ -87,7 +87,7 @@ class PlottingStrategy(ABC):
         ax: Axes, 
         circuit_id: str, 
         circuit_data: Dict,
-        data_type: str,
+        key: str,
         color: str
     ):
         """Add experimental data overlay to a plot"""
@@ -95,7 +95,7 @@ class PlottingStrategy(ABC):
             print(f"self.config.show_experimental={self.config.show_experimental}")
             return
         
-        exp_key = f"{data_type}_{data_type}"
+        exp_key = key
         if exp_key not in circuit_data["experimental_functions"]:
             print(f"{exp_key} not in {circuit_data["experimental_functions"].keys()}")
             return
@@ -105,6 +105,13 @@ class PlottingStrategy(ABC):
             print(f"time_data or values_data not in {exp_info.keys()}")
             return
         
+        legend = f"{circuit_id} - Experimental"
+        # Add comparison metrics if available
+        if "rms_diff" in exp_info and "mae_diff" in exp_info:
+            rms_diff = exp_info["rms_diff"]
+            mae_diff = exp_info["mae_diff"]
+            legend = f"{circuit_id} - Experimental: RMS={rms_diff:.2f}, MAE: {mae_diff:.2f}"
+
         # Plot experimental data
         ax.plot(
             exp_info["time_data"],
@@ -113,10 +120,10 @@ class PlottingStrategy(ABC):
             linewidth=self.config.linewidth_experimental,
             linestyle=":",
             alpha=self.config.alpha_experimental,
-            label=f"{circuit_id} - Experimental"
+            label=legend
         )
         
-        # Add comparison metrics if available
+"""         # Add comparison metrics if available
         if "rms_diff" in exp_info and "mae_diff" in exp_info:
             rms_diff = exp_info["rms_diff"]
             mae_diff = exp_info["mae_diff"]
@@ -128,7 +135,7 @@ class PlottingStrategy(ABC):
                 verticalalignment="top",
                 bbox=dict(boxstyle="round,pad=0.3", facecolor="wheat", alpha=0.8),
             )
-
+ """
 
 class VoltageInputPlottingStrategy(PlottingStrategy):
     """Strategy for plotting voltage-driven simulation results"""
@@ -266,7 +273,7 @@ class VoltageInputPlottingStrategy(PlottingStrategy):
             )
             
             # Add experimental overlay
-            self.add_experimental_overlay(ax, circuit_id, data, "current", colors[i])
+            self.add_experimental_overlay(ax, circuit_id, data, "current_current", colors[i])
         
         ax.legend()
         
@@ -433,12 +440,17 @@ class PIDControlPlottingStrategy(PlottingStrategy):
         )
         
         # Process experimental data comparisons
-        if circuit.has_experimental_data(data_type="voltage", key="voltage"):
-            exp_time = circuit.experimental_functions["voltage_voltage"]["time_data"]
-            exp_values = circuit.experimental_functions["voltage_voltage"]["values_data"]
-            rms_diff, mae_diff = exp_metrics(t, exp_time, voltage, exp_values)
-            circuit.experimental_functions["voltage_voltage"]["rms_diff"] = rms_diff
-            circuit.experimental_functions["voltage_voltage"]["mae_diff"] = mae_diff
+        dict_compare = {
+            "voltage": voltage,
+            "current": current
+        }
+        for data_type in ["voltage", "current"]:
+            for key in circuit.experimental_data_with_data_type(data_type=data_type):
+                exp_time = circuit.experimental_functions[f"{data_type}_{key}"]["time_data"]
+                exp_values = circuit.experimental_functions[f"{data_type}_{key}"]["values_data"]
+                rms_diff, mae_diff = exp_metrics(t, exp_time, dict_compare[data_type], exp_values)
+                circuit.experimental_functions[f"{data_type}_{key}"]["rms_diff"] = rms_diff
+                circuit.experimental_functions[f"{data_type}_{key}"]["mae_diff"] = mae_diff
         
         # Calculate additional metrics
         temperature_over_time = self._get_temperature_over_time(circuit, t)
@@ -480,8 +492,8 @@ class PIDControlPlottingStrategy(PlottingStrategy):
             return np.array([circuit.get_resistance(float(curr)) for curr in current])
     
     def get_subplot_layout(self, n_circuits: int) -> Tuple[int, int]:
-        """6 subplots for PID: current, PID gains, voltage, resistance, power, error"""
-        return (6, 1)
+        """5 subplots for PID: current, voltage, resistance, power, error"""
+        return (5, 1)
     
     def add_region_background(self, ax: Axes, time: np.ndarray, regions: List[str]):
         """Add colored background for PID regions"""
@@ -558,24 +570,14 @@ class PIDControlPlottingStrategy(PlottingStrategy):
                 color=colors[i], linewidth=self.config.linewidth_main,
                 label=f"{circuit_id} - Reference", linestyle="--", alpha=0.7
             )
+            
+            # Add experimental overlay
+            self.add_experimental_overlay(ax, circuit_id, data, "current_current", colors[i])
         
         ax.legend()
         
-        # 2. PID Gains
+        # 2. Voltages
         ax = axes[1]
-        self.setup_axis(ax, "Adaptive PID Parameters", "PID Gains")
-        
-        for i, circuit_id in enumerate(circuit_ids):
-            data = results.circuits[circuit_id]
-            ax.plot(results.time, data["Kp"], "g-", label=f"{circuit_id} Kp", linewidth=2)
-            ax.plot(results.time, data["Ki"], "b-", label=f"{circuit_id} Ki", linewidth=2)
-            ax.plot(results.time, data["Kd"] * 100, "r-", 
-                   label=f"{circuit_id} Kd × 100", linewidth=2)
-        
-        ax.legend()
-
-        # 3. Voltages
-        ax = axes[2]
         self.setup_axis(ax, "Control Voltages", "Voltage (V)")
         
         for i, circuit_id in enumerate(circuit_ids):
@@ -587,12 +589,12 @@ class PIDControlPlottingStrategy(PlottingStrategy):
             )
             
             # Add experimental overlay
-            self.add_experimental_overlay(ax, circuit_id, data, "voltage", colors[i])
+            self.add_experimental_overlay(ax, circuit_id, data, "voltage_voltage", colors[i])
        
         ax.legend()
 
-        # 4. Resistance plot with temperature
-        ax = axes[3]
+        # 3. Resistance plot with temperature
+        ax = axes[2]
         ax2 = None
         if self.config.show_temperature:
             has_variable_temp = any(
@@ -633,8 +635,8 @@ class PIDControlPlottingStrategy(PlottingStrategy):
         
         ax.legend()
 
-        # 5. Power dissipation
-        ax = axes[4]
+        # 4. Power dissipation
+        ax = axes[3]
         self.setup_axis(ax, "Power Dissipation", "Power (W)")
         
         for i, circuit_id in enumerate(circuit_ids):
@@ -647,8 +649,8 @@ class PIDControlPlottingStrategy(PlottingStrategy):
         
         ax.legend()
 
-        # 6. Tracking errors
-        ax = axes[5]
+        # 5. Tracking errors
+        ax = axes[4]
         self.setup_axis(ax, "Tracking Errors", "Error (A)", "Time (s)")
         
         for i, circuit_id in enumerate(circuit_ids):
