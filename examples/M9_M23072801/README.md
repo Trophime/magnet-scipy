@@ -99,8 +99,8 @@ NB: to extract data as csv
 
 ```bash
 python -m python_magnetrun.python_magnetrun M9_2023.09.16---17\:55\:22.txt select --output_key UH UB TinH TinB FlowH FlowB teb debitbrut
-python -m python_magnetrun.python_magnetrun M9_2023.09.16---17\:55\:22.txt select --output_key TinH
-python -m python_magnetrun.python_magnetrun M9_2023.09.16---17\:55\:22.txt select --output_key TinB
+python -m python_magnetrun.python_magnetrun M9_2023.09.16---17\:55\:22.txt select --output_key TinH --smoother savgol --windows 100
+python -m python_magnetrun.python_magnetrun M9_2023.09.16---17\:55\:22.txt select --output_key TinB --smoother savgol --windows 100
 python -m python_magnetrun.python_magnetrun M9_M23072801/M9_Overview_230916-1755.tdms select --output_key Courants_Alimentations/Courant_GR1 Courants_Alimentations/Courant_GR2 
 ```
 
@@ -112,3 +112,15 @@ There is a problem in signature connected with eco mode (U sequence is not neces
 ## inital conditions
 
 "i0": "IH": -6.32 A, "IB": 4.04 A for M9_2023.09.16---17:55:22.txt, M9_Overview_230916-1755.tdms
+
+## Running
+
+```bash
+python -m magnet_scipy.coupled_main_refactor  \
+    --wd examples/M9_M23072801/ \
+    --config-file circuits-pid-temp.json \
+    --value_start -6.325936 4.0380874 --time_start 5  --time_end 1200 --time_step 0.01 \
+    --save_plots M9_2023.09.16---17:55:22.png \
+    --debug --show_analytics
+```
+

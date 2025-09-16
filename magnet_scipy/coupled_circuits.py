@@ -148,12 +148,10 @@ class CoupledRLCircuitsPID:
         i = y  # Current is an array of ncircuit dimension
 
         # Get voltage from CSV data
-        tutu = ""
         if u is None:
             voltages = [circuit.input_voltage(t) for circuit in self.circuits]
             u = np.array(voltages)
-            tutu = " ****"
-        # print(f"DEBUG: voltages u={u} {tutu}")
+        # print(f"DEBUG: voltages u={u}")
 
         # Get current-dependent resistance
         temperatures = [circuit.get_temperature(t) for circuit in self.circuits]

@@ -7,9 +7,9 @@ Breaking changes: All legacy wrapper functions removed, only new system function
 
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import Dict, Tuple, Optional
+from typing import Dict, Tuple
 
-from .plotting_core import PlottingManager, PlottingAnalytics, ResultsFileManager
+from .plotting_core import PlottingManager
 from .plotting_strategies import PlotConfiguration
 
 # Global plotting manager instance
@@ -30,7 +30,7 @@ def configure_plotting(
     show_experimental: bool = True,
     show_regions: bool = True,
     show_temperature: bool = True,
-    **kwargs
+    **kwargs,
 ):
     """Configure global plotting settings"""
     config = PlotConfiguration(
@@ -39,7 +39,7 @@ def configure_plotting(
         show_experimental=show_experimental,
         show_regions=show_regions,
         show_temperature=show_temperature,
-        **kwargs
+        **kwargs,
     )
     global _plotting_manager
     _plotting_manager = PlottingManager(config)
@@ -52,11 +52,11 @@ def create_advanced_plots(
     save_path: str = None,
     show: bool = True,
     show_analytics: bool = True,
-    config: PlotConfiguration = None
+    config: PlotConfiguration = None,
 ):
     """
     Create advanced plots using the new plotting system
-    
+
     Args:
         sol: Solution object from scipy.integrate.solve_ivp
         system: Circuit or coupled system instance
@@ -65,7 +65,7 @@ def create_advanced_plots(
         show: Whether to display plots
         show_analytics: Whether to display analytics
         config: Custom plotting configuration
-        
+
     Returns:
         Tuple of (ProcessedResults, analytics_dict)
     """
@@ -80,18 +80,18 @@ def create_comparison_plots(
     labels: list = None,
     save_path: str = None,
     show: bool = True,
-    config: PlotConfiguration = None
+    config: PlotConfiguration = None,
 ):
     """
     Create comparison plots between multiple simulations
-    
+
     Args:
         solutions_and_systems: List of (sol, system) tuples
         labels: Labels for each simulation (optional)
         save_path: Path to save plots (optional)
         show: Whether to display plots
         config: Custom plotting configuration
-        
+
     Returns:
         matplotlib Figure object
     """
@@ -109,11 +109,11 @@ def create_custom_plot(
     ylabel: str = "Y",
     save_path: str = None,
     show: bool = True,
-    config: PlotConfiguration = None
+    config: PlotConfiguration = None,
 ):
     """
     Create custom plots with user-defined data
-    
+
     Args:
         data_dict: Dictionary of {label: (x_data, y_data)} pairs
         plot_type: Type of plot ("line", "scatter", "bar")
@@ -123,16 +123,16 @@ def create_custom_plot(
         save_path: Path to save plot (optional)
         show: Whether to display plot
         config: Custom plotting configuration
-        
+
     Returns:
         matplotlib Figure object
     """
     if config:
-        plt.rcParams['figure.figsize'] = config.figsize
-        plt.rcParams['figure.dpi'] = config.dpi
-    
+        plt.rcParams["figure.figsize"] = config.figsize
+        plt.rcParams["figure.dpi"] = config.dpi
+
     fig, ax = plt.subplots()
-    
+
     for label, (x_data, y_data) in data_dict.items():
         if plot_type == "line":
             ax.plot(x_data, y_data, label=label)
@@ -142,34 +142,34 @@ def create_custom_plot(
             ax.bar(x_data, y_data, label=label, alpha=0.7)
         else:
             raise ValueError(f"Unsupported plot type: {plot_type}")
-    
+
     ax.set_title(title)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     ax.legend()
     ax.grid(True, alpha=0.3)
-    
+
     plt.tight_layout()
-    
+
     if save_path:
         fig.savefig(save_path, dpi=config.dpi if config else 300)
         print(f"Custom plot saved to {save_path}")
-    
+
     if show:
         plt.show()
     else:
         plt.close(fig)
-    
+
     return fig
 
 
 # Export clean API functions only
 __all__ = [
-    'get_plotting_manager',
-    'configure_plotting',
-    'create_advanced_plots',
-    'create_comparison_plots',
-    'create_custom_plot'
+    "get_plotting_manager",
+    "configure_plotting",
+    "create_advanced_plots",
+    "create_comparison_plots",
+    "create_custom_plot",
 ]
 
 
@@ -189,7 +189,7 @@ __all__ = [
 #
 # New voltage plotting:
 #   processed_results, analytics = create_advanced_plots(
-#       sol, circuit, 
+#       sol, circuit,
 #       strategy_type="voltage_input",
 #       save_path="plot.png",
 #       show_analytics=True
@@ -202,7 +202,7 @@ __all__ = [
 # New PID plotting:
 #   processed_results, analytics = create_advanced_plots(
 #       sol, circuit,
-#       strategy_type="pid_control", 
+#       strategy_type="pid_control",
 #       save_path="plot.png",
 #       show_analytics=True
 #   )
