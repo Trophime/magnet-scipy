@@ -4,7 +4,11 @@ from typing import Tuple, List, Dict
 
 # Import the new PID controller and CSV utilities
 from .pid_controller import PIDController, create_adaptive_pid_controller
-from .csv_utils import create_function_from_csv, create_2d_function_from_csv
+from .csv_utils import (
+    create_function_from_csv,
+    create_2d_function_from_csv,
+    create_piecewise_linear_derivative,
+)
 
 
 class RLCircuitPID:
@@ -78,6 +82,7 @@ class RLCircuitPID:
         # Always initialize these to None first - PREVENTS AttributeError
         self.temperature_func = None
         self.reference_func = None
+        self.reference_derivative_func = None
         self.voltage_func = None
         self.use_csv_data = False
 
@@ -288,6 +293,9 @@ class RLCircuitPID:
             self.reference_func, self.time_data, self.current_data = (
                 create_function_from_csv(csv_file, "time", "current", method="linear")
             )
+            self.reference_derivative_func = create_piecewise_linear_derivative(
+                self.time_data, self.current_data
+            )
 
             self.use_csv_data = True
             print(f"Loaded reference current from {csv_file} using Scipy interpolation")
@@ -355,6 +363,16 @@ class RLCircuitPID:
         """Get reference current at time t"""
         return self.reference_func(t)
 
+    def reference_current_derivative(self, t: float) -> float:
+        """
+        Exact derivative of the (piecewise-linear) reference current at time t.
+
+        Looked up directly from the CSV segment slope instead of estimated
+        with a finite difference, since the reference is piecewise-linear
+        and its derivative is therefore piecewise-constant.
+        """
+        return float(self.reference_derivative_func(t))
+
     def input_voltage(self, t: float) -> float:
         """Get input voltage at time t"""
         return self.voltage_func(t)
@@ -374,7 +392,6 @@ class RLCircuitPID:
         temperature = self.get_temperature(t)
         R_current = self.get_resistance(i, temperature)
         i_ref = self.reference_current(t)
-        # di_ref_dt = self.reference_current_derivative
         Kp, Ki, Kd = self.get_pid_parameters(i_ref)
 
         # Analytical di/dt
@@ -490,6 +507,7 @@ class RLCircuitPID:
             new_circuit.use_variable_resistance = True
 
         new_circuit.reference_func = self.reference_func
+        new_circuit.reference_derivative_func = self.reference_derivative_func
         new_circuit.voltage_func = self.voltage_func
         new_circuit.use_csv_data = self.use_csv_data
 

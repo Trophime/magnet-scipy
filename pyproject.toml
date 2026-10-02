@@ -34,8 +34,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",
-    "pytest-cov>=4.0.0", 
+    "pytest-cov>=4.0.0",
     "pytest-mock>=3.10.0",
+    "psutil>=5.9.0",
     "black>=22.0.0",
     "flake8>=4.0.0",
     "isort>=5.10.0",
@@ -48,8 +49,8 @@ docs = [
 ]
 
 [project.scripts]
-magnet-scipy = "magnet_scipy.main:main"
-magnet-scipy-coupled = "magnet_scipy.coupled_main:main"
+magnet-scipy = "magnet_scipy.main_refactor:main"
+magnet-scipy-coupled = "magnet_scipy.coupled_main_refactor:main"
 
 [project.urls]
 Homepage = "https://github.com/magnetscipy/magnet_scipy"

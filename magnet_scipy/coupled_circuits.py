@@ -120,6 +120,10 @@ class CoupledRLCircuitsPID:
         """Get reference current for a specific circuit"""
         return [circuit.reference_current(t) for circuit in self.circuits]
 
+    def get_reference_current_derivatives(self, t: float) -> List[float]:
+        """Get exact reference current derivative (piecewise-linear slope) for all circuits"""
+        return [circuit.reference_current_derivative(t) for circuit in self.circuits]
+
     def get_pid_parameters(
         self, i_ref: np.ndarray
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:

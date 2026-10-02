@@ -145,11 +145,13 @@ class SingleCircuitPIDStrategy(PIDControlStrategy):
             error_message=sol.message if not sol.success else None  # Version 3.0: Required field
         )
     
-    def _estimate_single_circuit_reference_derivative(self, circuit, t: float, dt: float = 1e-4) -> float:
-        """Estimate derivative of reference current for single circuit"""
-        i_ref_current = circuit.reference_current(t)
-        i_ref_future = circuit.reference_current(t + dt)
-        return (i_ref_future - i_ref_current) / dt
+    def _estimate_single_circuit_reference_derivative(self, circuit, t: float) -> float:
+        """
+        Exact derivative of the (piecewise-linear) reference current at time t,
+        looked up from the CSV segment slope rather than estimated with a finite
+        difference.
+        """
+        return circuit.reference_current_derivative(t)
 
 
 class SingleCircuitSimulationRunner:

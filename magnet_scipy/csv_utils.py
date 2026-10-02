@@ -32,6 +32,38 @@ def create_function_from_csv(
     return scipy_interp, x_data, y_data
 
 
+def create_piecewise_linear_derivative(
+    x_data: np.ndarray, y_data: np.ndarray
+) -> Callable:
+    """
+    Build an exact derivative function for a piecewise-linear interpolant
+    (as produced by create_function_from_csv(..., method="linear")).
+
+    The derivative of a piecewise-linear function is piecewise CONSTANT: it
+    equals the segment slope between consecutive data points. This looks it
+    up directly via binary search in O(log n), instead of estimating it with
+    a finite difference (which needs two interpolation calls and gives wrong
+    results within `dt` of a breakpoint, where it straddles the kink).
+
+    Args:
+        x_data: Sorted independent variable values (e.g. time)
+        y_data: Corresponding dependent variable values (e.g. current)
+
+    Returns:
+        Callable mapping x (scalar or array) to the local slope dy/dx.
+        Out-of-range x is clamped to the nearest edge segment's slope.
+    """
+    slopes = np.diff(y_data) / np.diff(x_data)
+    n_segments = len(slopes)
+
+    def derivative(x):
+        idx = np.searchsorted(x_data, x, side="right") - 1
+        idx = np.clip(idx, 0, n_segments - 1)
+        return slopes[idx]
+
+    return derivative
+
+
 def create_2d_function_from_csv(
     csv_file_path: str,
     x_column: str,

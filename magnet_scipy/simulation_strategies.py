@@ -226,17 +226,17 @@ class PIDControlStrategy(SimulationStrategy):
             error_message=sol.message if not sol.success else None
         )
     
-    def _estimate_reference_derivative(self, system, t: float, dt: float = 1e-4) -> np.ndarray:
-        """Estimate derivative of reference current using finite differences"""
-        if hasattr(system, 'get_reference_currents'):
-            i_ref_current = np.array(system.get_reference_currents(t))
-            i_ref_future = np.array(system.get_reference_currents(t + dt))
-            return (i_ref_future - i_ref_current) / dt
+    def _estimate_reference_derivative(self, system, t: float) -> np.ndarray:
+        """
+        Exact derivative of the (piecewise-linear) reference current(s) at time t,
+        looked up from the CSV segment slope rather than estimated with a finite
+        difference.
+        """
+        if hasattr(system, 'get_reference_current_derivatives'):
+            return np.array(system.get_reference_current_derivatives(t))
         else:
             # Single circuit
-            i_ref_current = system.reference_current(t)
-            i_ref_future = system.reference_current(t + dt)
-            return (i_ref_future - i_ref_current) / dt
+            return system.reference_current_derivative(t)
     
     def get_state_description(self) -> Dict[str, str]:
         return {
