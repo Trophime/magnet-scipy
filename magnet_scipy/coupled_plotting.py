@@ -7,7 +7,7 @@ Maintains backward compatibility while eliminating complex mode switching
 
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import Dict, Tuple, List
+from typing import Dict, Tuple, List, Optional
 
 from .plotting_core import PlottingManager, PlottingAnalytics, ResultsFileManager
 from .plotting_strategies import ProcessedResults
@@ -17,16 +17,23 @@ from .plotting_strategies import ProcessedResults
 def prepare_coupled_post(
     sol, coupled_system, mode: str = "regular"
 ) -> Tuple[np.ndarray, Dict]:
-    """
-    Prepare coupled circuit simulation results for plotting
+    """Prepare coupled circuit simulation results for plotting.
 
-    Args:
-        sol: Solution object from scipy.integrate.solve_ivp
-        coupled_system: CoupledRLCircuitsPID instance
-        mode: "regular" for voltage simulation, "cde" for PID control
+    Parameters
+    ----------
+    sol : scipy.integrate.OdeResult
+        Solution returned by :func:`scipy.integrate.solve_ivp`.
+    coupled_system : CoupledRLCircuitsPID
+        Simulated coupled system.
+    mode : str, default "regular"
+        ``"regular"`` for voltage-driven simulation, ``"cde"`` for PID control.
 
-    Returns:
-        Tuple of (time_array, results_dict)
+    Returns
+    -------
+    time : numpy.ndarray
+        Time array [s].
+    results : dict
+        Per-circuit results keyed by circuit ID.
     """
     manager = PlottingManager()
     strategy_type = "voltage_input" if mode == "regular" else "pid_control"
@@ -42,7 +49,7 @@ def plot_coupled_vresults(
     coupled_system,
     t: np.ndarray,
     results: Dict,
-    save_path: str = None,
+    save_path: Optional[str] = None,
     show: bool = True,
 ):
     """
@@ -61,7 +68,7 @@ def plot_coupled_results(
     coupled_system,
     t: np.ndarray,
     results: Dict,
-    save_path: str = None,
+    save_path: Optional[str] = None,
     show: bool = True,
 ):
     """
@@ -279,19 +286,30 @@ def create_coupling_comparison_plot(
     results_coupled: Dict,
     time: np.ndarray,
     circuit_ids: List[str],
-    save_path: str = None,
+    save_path: Optional[str] = None,
     show: bool = True,
 ):
-    """
-    Create specialized comparison plot showing coupling effects
+    """Create a comparison plot showing coupling effects.
 
-    Args:
-        results_uncoupled: Results from uncoupled simulation
-        results_coupled: Results from coupled simulation
-        time: Time array
-        circuit_ids: List of circuit IDs to compare
-        save_path: Optional path to save plot
-        show: Whether to show the plot
+    Parameters
+    ----------
+    results_uncoupled : dict
+        Per-circuit results of the uncoupled simulation, keyed by circuit ID.
+    results_coupled : dict
+        Per-circuit results of the coupled simulation, keyed by circuit ID.
+    time : numpy.ndarray
+        Time array [s].
+    circuit_ids : list of str
+        Circuit IDs to compare.
+    save_path : str, optional
+        Path to save the plot.
+    show : bool, default True
+        Whether to show the plot; otherwise the figure is closed.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+        The comparison figure.
     """
     n_circuits = len(circuit_ids)
     fig, axes = plt.subplots(2, 2, figsize=(16, 12))
@@ -428,14 +446,32 @@ def create_coupling_comparison_plot(
     return fig
 
 
-def plot_region_analysis(coupled_system, t: np.ndarray, results: Dict):
-    """
-    Create specialized plot for PID region analysis across coupled circuits
+def plot_region_analysis(
+    coupled_system,
+    t: np.ndarray,
+    results: Dict,
+    save_path: Optional[str] = None,
+    show: bool = True,
+):
+    """Create a PID region analysis plot across coupled circuits.
 
-    Args:
-        coupled_system: CoupledRLCircuitsPID instance
-        t: Time array
-        results: Results dictionary
+    Parameters
+    ----------
+    coupled_system : CoupledRLCircuitsPID
+        Simulated coupled system.
+    t : numpy.ndarray
+        Time array [s].
+    results : dict
+        Per-circuit results keyed by circuit ID; each entry needs ``"regions"``.
+    save_path : str, optional
+        Path to save the plot.
+    show : bool, default True
+        Whether to show the plot.
+
+    Returns
+    -------
+    matplotlib.figure.Figure or None
+        The figure, or None if no PID region data is available.
     """
     # Check if PID regions are available
     has_regions = all("regions" in results[cid] for cid in coupled_system.circuit_ids)
@@ -447,9 +483,6 @@ def plot_region_analysis(coupled_system, t: np.ndarray, results: Dict):
     fig, axes = plt.subplots(
         n_circuits + 1, 1, figsize=(16, 4 * (n_circuits + 1)), sharex=True
     )
-
-    if n_circuits == 1:
-        axes = [axes]
 
     colors = plt.cm.Set1(np.linspace(0, 1, n_circuits))
     region_colors = {"low": "lightgreen", "medium": "lightyellow", "high": "lightcoral"}
@@ -542,7 +575,17 @@ def plot_region_analysis(coupled_system, t: np.ndarray, results: Dict):
     ax.grid(True, alpha=0.3)
 
     plt.tight_layout()
-    plt.show()
+
+    if save_path:
+        fig.savefig(save_path, dpi=300)
+        print(f"Region analysis plot saved to {save_path}")
+
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)
+
+    return fig
 
 
 # Advanced coupled circuit analysis functions
