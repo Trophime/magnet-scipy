@@ -15,14 +15,14 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9", 
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Physics",
     "Topic :: Scientific/Engineering :: Mathematics",
 ]
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 dependencies = [
     "scipy>=1.14.0",
     "numpy>=1.21.0",
@@ -38,14 +38,35 @@ dev = [
     "pytest-mock>=3.10.0",
     "psutil>=5.9.0",
     "black>=22.0.0",
-    "flake8>=4.0.0",
-    "isort>=5.10.0",
+    "ruff>=0.6.0",
     "mypy>=0.950",
+    "ty>=0.0.1a20",
+    "bandit[toml]>=1.7.9",
+]
+# Optional JAX/diffrax solver stack (not needed by the scipy-based package)
+jax = [
+    "jax>=0.4.0",
+    "jaxlib>=0.4.0",
+    "diffrax>=0.5.0",
 ]
 docs = [
-    "sphinx>=4.5.0",
-    "sphinx-rtd-theme>=1.0.0",
-    "sphinxcontrib-napoleon>=0.7",
+    "sphinx>=7.0",
+    "myst-parser>=2.0",
+    "sphinx-rtd-theme>=2.0",
+]
+
+[dependency-groups]
+# uv-native dev group (installed by default with `uv sync`)
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-mock>=3.10.0",
+    "psutil>=5.9.0",
+    "black>=22.0.0",
+    "ruff>=0.6.0",
+    "mypy>=0.950",
+    "ty>=0.0.1a20",
+    "bandit[toml]>=1.7.9",
 ]
 
 [project.scripts]
@@ -83,6 +104,7 @@ markers = [
     "csv: marks tests that use CSV functionality",
     "plotting: marks tests that require plotting libraries",
     "performance: marks tests that measure performance",
+    "jax: marks tests that require the optional jax/diffrax stack (skipped if not installed)",
 ]
 
 [tool.coverage.run]
@@ -107,7 +129,7 @@ exclude_lines = [
 
 [tool.black]
 line-length = 88
-target-version = ['py38', 'py39', 'py310', 'py311']
+target-version = ['py310', 'py311', 'py312', 'py313']
 include = '\.pyi?$'
 extend-exclude = '''
 /(
@@ -123,17 +145,22 @@ extend-exclude = '''
 )/
 '''
 
-[tool.isort]
-profile = "black"
-multi_line_output = 3
-include_trailing_comma = true
-force_grid_wrap = 0
-use_parentheses = true
-ensure_newline_before_comments = true
-line_length = 88
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+extend-exclude = ["*.old*"]
+
+[tool.ruff.lint]
+# Pyflakes + core pycodestyle errors plus import sorting, replacing flake8
+# and isort. Listed explicitly so newer ruff defaults don't change results.
+# Formatting is left to black.
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["magnet_scipy"]
 
 [tool.mypy]
-python_version = "3.8"
+python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
@@ -155,3 +182,13 @@ module = [
     "pandas.*",
 ]
 ignore_missing_imports = true
+
+[tool.ty.environment]
+python-version = "3.10"
+
+[tool.ty.src]
+include = ["magnet_scipy", "tests"]
+exclude = ["**/*.old*"]
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv", "build", "dist"]

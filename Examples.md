@@ -44,7 +44,7 @@ with
 }
 ```
 
-* pid mode - running pid each time_step
+* pid mode - current regulated by the (continuous) physical PID controller; `time_step` only bounds the solver step
 
 ```bash
 python -m magnet_scipy.main \

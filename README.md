@@ -2,7 +2,7 @@
 
 **Magnetic coupling simulation for RL circuits with adaptive PID control using Scipy**
 
-[![Python Version](https://img.shields.io/badge/python-3.8+-blue.svg)](https://python.org)
+[![Python Version](https://img.shields.io/badge/python-3.10+-blue.svg)](https://python.org)
 
 ## Overview
 
@@ -49,10 +49,36 @@ cd magnet_scipy
 pip install -e ".[dev]"
 ```
 
+### Using uv
+[uv](https://docs.astral.sh/uv/) installs the package and the `dev` dependency group from the committed `uv.lock`:
+```bash
+git clone https://github.com/Trophime/magnet_scipy.git
+cd magnet_scipy
+uv sync                       # creates .venv with package + dev tools
+uv run magnet-scipy --help    # run CLI entry points
+uv run pytest                 # run the test suite
+```
+After changing dependencies in `pyproject.toml`, run `uv lock` and commit the updated `uv.lock`.
+
+### Optional JAX stack
+The package runs on SciPy alone. The JAX/diffrax stack is only needed for
+tests marked `@pytest.mark.jax` (which are skipped when it is not installed):
+```bash
+uv sync --extra jax        # or: pip install -e ".[jax]"
+```
+
+### Static Checks
+```bash
+uv run ruff check                            # linting + import order (config: [tool.ruff])
+uv run ty check                              # type checking (config: [tool.ty] in pyproject.toml)
+uv run bandit -c pyproject.toml -r magnet_scipy   # security linting (config: [tool.bandit])
+```
+
 ### Dependencies
-- **Core**: ScyPy (≥1.14.0), NumPy (≥1.21.0), Pandas (≥1.3.0)
+- **Core**: SciPy (≥1.14.0), NumPy (≥1.21.0), Pandas (≥1.3.0)
 - **Plotting**: Matplotlib (≥3.5.0), Seaborn (≥0.11.0)
-- **Development**: pytest, black, flake8, mypy
+- **Development**: pytest, black, ruff, mypy, ty, bandit
+- **Optional** (`jax` extra): JAX, jaxlib, diffrax
 
 ## Quick Start
 
@@ -104,7 +130,8 @@ magnet-scipy --config-file CONFIG_FILE [OPTIONS]
 # Time control
 --time-start FLOAT          # Simulation start time (default: 0.0)
 --time-end FLOAT            # Simulation end time (default: 5.0) 
---time-step FLOAT           # Time step size (default: 0.001)
+--time-step FLOAT           # Maximum solver step, passed as max_step to solve_ivp (default: 0.001)
+                            # The solver is adaptive: actual steps may be smaller
 --method {RK45,RK23,DOP853,Radau,BDF,LSODA}  # ODE solver method
 
 # Initial conditions
