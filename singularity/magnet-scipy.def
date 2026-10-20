@@ -5,6 +5,11 @@
 # Run:
 #   singularity run magnet-scipy.sif --help
 #   singularity exec magnet-scipy.sif magnet-scipy-coupled --help
+# Plot windows: DISPLAY, $HOME and /tmp/.X11-unix are shared by default, so X11
+# works as is with ~/.Xauthority. When the cookie lives elsewhere (GNOME/Xwayland
+# puts it under /run/user/<uid>), bind it:
+#   singularity exec -B "$XAUTHORITY" magnet-scipy.sif magnet-scipy-coupled --show_plots ...
+# --nv is not needed for this: it only binds the NVIDIA driver for CUDA/GPU OpenGL.
 
 Bootstrap: docker
 From: debian:trixie
