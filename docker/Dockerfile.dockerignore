@@ -1,0 +1,8 @@
+# Build context is the repo root; only these are needed by docker/Dockerfile
+*
+!pyproject.toml
+!uv.lock
+!README.md
+!magnet_scipy/
+magnet_scipy/**/__pycache__
+magnet_scipy/**/*.old*

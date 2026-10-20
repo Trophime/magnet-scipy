@@ -1,0 +1,61 @@
+# Runtime image for magnet-scipy (Singularity / Apptainer).
+#
+# Build from the repository root:
+#   singularity build --fakeroot magnet-scipy.sif singularity/magnet-scipy.def
+# Run:
+#   singularity run magnet-scipy.sif --help
+#   singularity exec magnet-scipy.sif magnet-scipy-coupled --help
+
+Bootstrap: docker
+From: debian:trixie
+
+%files
+    pyproject.toml /opt/magnet-scipy/pyproject.toml
+    uv.lock /opt/magnet-scipy/uv.lock
+    README.md /opt/magnet-scipy/README.md
+    magnet_scipy /opt/magnet-scipy/magnet_scipy
+
+%environment
+    # MPLBACKEND is left unset: matplotlib picks TkAgg when DISPLAY is set, Agg otherwise
+    export PATH=/opt/venv/bin:$PATH
+
+%post
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    # python3-tk provides the TkAgg matplotlib backend (X11, no OpenGL needed)
+    apt-get install -y --no-install-recommends ca-certificates curl python3 python3-tk python3-venv
+
+    curl -LsSf https://astral.sh/uv/0.9.5/install.sh \
+        | env UV_UNMANAGED_INSTALL=/usr/local/bin sh
+
+    export UV_PYTHON_DOWNLOADS=never
+    export UV_PYTHON=python3
+    export UV_LINK_MODE=copy
+    export UV_COMPILE_BYTECODE=1
+    export UV_NO_CACHE=1
+    export UV_PROJECT_ENVIRONMENT=/opt/venv
+
+    cd /opt/magnet-scipy
+    find magnet_scipy -name '*.old*' -delete
+    find magnet_scipy -name '__pycache__' -prune -exec rm -rf {} +
+    uv sync --frozen --no-dev --no-editable
+
+    # Build-only tooling is not needed at runtime
+    cd /
+    rm -rf /opt/magnet-scipy /usr/local/bin/uv /usr/local/bin/uvx
+    apt-get purge -y curl
+    apt-get autoremove -y
+    rm -rf /var/lib/apt/lists/*
+
+%runscript
+    exec magnet-scipy "$@"
+
+%labels
+    Name magnet-scipy
+    Description Magnetic coupling simulation for RL circuits with adaptive PID control
+
+%help
+    Runtime image for magnet-scipy.
+
+    singularity run magnet-scipy.sif [ARGS]          runs magnet-scipy
+    singularity exec magnet-scipy.sif magnet-scipy-coupled [ARGS]
