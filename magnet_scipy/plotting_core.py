@@ -210,10 +210,28 @@ class PlottingAnalytics:
                     print(f"      MAE Difference: {metrics['mae_difference']:.4f}")
 
 
+class SimulationResultSolution:
+    """Adapt a SimulationResult to the solve_ivp-like interface used by plotting strategies"""
+
+    def __init__(self, result):
+        self.t = result.time
+        self.y = result.solution
+        self.success = result.success
+        self.message = result.error_message or "Strategy simulation completed"
+        self.nfev = result.metadata.get('n_evaluations', 0)
+
+
+def as_solution(sol_or_result):
+    """Return a solve_ivp-like solution, wrapping SimulationResult objects if needed"""
+    if hasattr(sol_or_result, 'solution') and hasattr(sol_or_result, 'time'):
+        return SimulationResultSolution(sol_or_result)
+    return sol_or_result
+
+
 class PlottingManager:
     """Main plotting manager that orchestrates different strategies"""
     
-    def __init__(self, config: PlotConfiguration = None):
+    def __init__(self, config: Optional[PlotConfiguration] = None):
         self.config = config or PlotConfiguration()
         PlottingStyleManager.setup_matplotlib_defaults()
         
@@ -260,18 +278,43 @@ class PlottingManager:
         self,
         sol,
         system,
-        strategy_type: str = None,
-        save_path: str = None,
+        strategy_type: Optional[str] = None,
+        save_path: Optional[str] = None,
         show: bool = True,
         show_analytics: bool = False
     ) -> Tuple[ProcessedResults, Dict]:
-        """
-        Main plotting interface - detects strategy and creates appropriate plots
-        
-        Returns:
-            Tuple of (processed_results, analytics)
+        """Detect the plotting strategy and create the appropriate plots.
+
+        Parameters
+        ----------
+        sol : scipy.integrate.OdeResult or SimulationResult
+            Solution to plot.
+        system : RLCircuitPID or CoupledRLCircuitsPID
+            Simulated circuit or coupled system.
+        strategy_type : {"voltage_input", "pid_control"}, optional
+            Plotting strategy; auto-detected if None.
+        save_path : str, optional
+            Path to save the plots.
+        show : bool, default True
+            Whether to display the plots.
+        show_analytics : bool, default False
+            Whether to print the analytics.
+
+        Returns
+        -------
+        results : ProcessedResults
+            Processed simulation data.
+        analytics : dict
+            Circuit performance analytics.
+
+        Raises
+        ------
+        ValueError
+            If ``strategy_type`` is unknown.
         """
         print(f"PlottingManager.create_plots: strategy_type={strategy_type}, save_path={save_path}, show={show}, show_analytics={show_analytics}")
+        sol = as_solution(sol)
+
         # Detect strategy if not specified
         if strategy_type is None:
             strategy_type = self.detect_strategy(sol, system)
@@ -296,11 +339,22 @@ class PlottingManager:
             PlottingAnalytics.print_detailed_analytics(analytics)
         
         return results, analytics
+
+    def prepare_results(
+        self, sol, system, strategy_type: Optional[str] = None
+    ) -> ProcessedResults:
+        """Process a solution (or SimulationResult) into ProcessedResults without plotting"""
+        sol = as_solution(sol)
+        if strategy_type is None:
+            strategy_type = self.detect_strategy(sol, system)
+        if strategy_type not in self.strategies:
+            raise ValueError(f"Unknown plotting strategy: {strategy_type}")
+        return self.strategies[strategy_type].prepare_data(sol, system)
     
     def create_comparison_plots(
         self,
         results_list: List[Tuple[ProcessedResults, str]],
-        save_path: str = None,
+        save_path: Optional[str] = None,
         show: bool = True
     ):
         """Create comparison plots between different simulation runs"""
@@ -384,7 +438,7 @@ class ResultsFileManager:
         filename: str = "simulation_results.npz"
     ):
         """Save processed results and analytics to file"""
-        save_data = {
+        save_data: Dict[str, Any] = {
             "time": results.time,
             "strategy_type": results.strategy_type,
             "metadata": results.metadata,

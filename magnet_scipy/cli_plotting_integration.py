@@ -5,10 +5,15 @@ Integration layer between refactored CLI components and plotting system
 Updates the CLI simulation components to use the new plotting architecture
 """
 
-from typing import Dict, Tuple, Any
+from typing import Dict, Tuple, Any, Optional
 import numpy as np
 
-from .plotting_core import PlottingManager, PlottingAnalytics, ResultsFileManager
+from .plotting_core import (
+    PlottingManager,
+    PlottingAnalytics,
+    ResultsFileManager,
+    SimulationResultSolution,
+)
 from .plotting_strategies import PlotConfiguration, ProcessedResults
 from .cli_core import OutputOptions
 
@@ -16,7 +21,7 @@ from .cli_core import OutputOptions
 class EnhancedPlottingManager(PlottingManager):
     """Enhanced plotting manager integrated with CLI components"""
     
-    def __init__(self, output_options: OutputOptions, config: PlotConfiguration = None):
+    def __init__(self, output_options: OutputOptions, config: Optional[PlotConfiguration] = None):
         super().__init__(config)
         self.output_options = output_options
     
@@ -24,22 +29,14 @@ class EnhancedPlottingManager(PlottingManager):
         self,
         simulation_result,
         system,
-        config_file: str = None
+        config_file: Optional[str] = None
     ) -> Tuple[ProcessedResults, Dict]:
         """
         Create plots directly from SimulationResult objects
         Integrates with the refactored CLI simulation components
         """
         # Convert SimulationResult to solution format
-        class FakeSol:
-            def __init__(self, result):
-                self.t = result.time
-                self.y = result.solution
-                self.success = result.success
-                self.message = result.error_message or "Strategy simulation completed"
-                self.nfev = result.metadata.get('n_evaluations', 0)
-        
-        sol = FakeSol(simulation_result)
+        sol = SimulationResultSolution(simulation_result)
         
         # Determine strategy from simulation result
         strategy_type = simulation_result.strategy_type

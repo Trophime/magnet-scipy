@@ -7,17 +7,28 @@ from typing import Tuple, Callable, List
 def create_function_from_csv(
     csv_file_path: str, x_column: str, y_column: str, method: str = "linear"
 ) -> Tuple[Callable, np.ndarray, np.ndarray]:
-    """
-    Create a Scipy function from tabulated CSV data.
+    """Create a SciPy interpolation function from tabulated CSV data.
 
-    Args:
-        csv_file_path: Path to the CSV file
-        x_column: Name of the x-axis column (independent variable)
-        y_column: Name of the y-axis column (dependent variable)
-        method: Interpolation method ('linear', 'nearest', or 'cubic')
+    Parameters
+    ----------
+    csv_file_path : str
+        Path to the CSV file; the separator is auto-detected.
+    x_column : str
+        Name of the independent variable column.
+    y_column : str
+        Name of the dependent variable column.
+    method : str, default "linear"
+        Interpolation kind passed to :class:`scipy.interpolate.interp1d`
+        (e.g. ``"linear"``, ``"nearest"``, ``"cubic"``).
 
-    Returns:
-        Tuple of (scipy_function, x_data, y_data)
+    Returns
+    -------
+    function : scipy.interpolate.interp1d
+        Interpolant y = f(x).
+    x_data : numpy.ndarray
+        x values, sorted ascending.
+    y_data : numpy.ndarray
+        Corresponding y values.
     """
     # Load CSV data
     df = pd.read_csv(csv_file_path, sep=None, engine="python")
@@ -35,23 +46,31 @@ def create_function_from_csv(
 def create_piecewise_linear_derivative(
     x_data: np.ndarray, y_data: np.ndarray
 ) -> Callable:
-    """
-    Build an exact derivative function for a piecewise-linear interpolant
-    (as produced by create_function_from_csv(..., method="linear")).
+    """Build an exact derivative function for a piecewise-linear interpolant.
 
+    The interpolant is the one produced by
+    ``create_function_from_csv(..., method="linear")``.
+
+    Parameters
+    ----------
+    x_data : numpy.ndarray
+        Sorted independent variable values (e.g. time [s]).
+    y_data : numpy.ndarray
+        Corresponding dependent variable values (e.g. current [A]).
+
+    Returns
+    -------
+    callable
+        Maps x (scalar or array) to the local slope dy/dx. Out-of-range x is
+        clamped to the nearest edge segment's slope.
+
+    Notes
+    -----
     The derivative of a piecewise-linear function is piecewise CONSTANT: it
     equals the segment slope between consecutive data points. This looks it
     up directly via binary search in O(log n), instead of estimating it with
     a finite difference (which needs two interpolation calls and gives wrong
     results within `dt` of a breakpoint, where it straddles the kink).
-
-    Args:
-        x_data: Sorted independent variable values (e.g. time)
-        y_data: Corresponding dependent variable values (e.g. current)
-
-    Returns:
-        Callable mapping x (scalar or array) to the local slope dy/dx.
-        Out-of-range x is clamped to the nearest edge segment's slope.
     """
     slopes = np.diff(y_data) / np.diff(x_data)
     n_segments = len(slopes)
@@ -71,22 +90,41 @@ def create_2d_function_from_csv(
     z_column: str,
     method: str = "linear",
 ) -> Tuple[Callable, np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Create a 2D Scipy function from tabulated CSV data for z = f(x, y).
+    """Create a 2D interpolation function z = f(x, y) from tabulated CSV data.
 
     Handles gridded data where X and Y columns contain duplicate values
     representing a regular grid structure.
 
-    Args:
-        csv_file_path: Path to the CSV file
-        x_column: Name of the first independent variable column
-        y_column: Name of the second independent variable column
-        z_column: Name of the dependent variable column
-        method: Interpolation method ('linear' or 'nearest')
+    Parameters
+    ----------
+    csv_file_path : str
+        Path to the CSV file; the separator is auto-detected.
+    x_column : str
+        Name of the first independent variable column.
+    y_column : str
+        Name of the second independent variable column.
+    z_column : str
+        Name of the dependent variable column.
+    method : {"linear", "nearest"}, default "linear"
+        Bilinear or nearest-neighbour interpolation on the grid.
 
-    Returns:
-        Tuple of (scipy_function, x_unique, y_unique, z_grid)
-        where z_grid has shape (len(y_unique), len(x_unique))
+    Returns
+    -------
+    function : callable
+        ``function(x, y)`` returning the interpolated z. With ``"linear"``,
+        points outside the grid are clamped to its bounds.
+    x_unique : numpy.ndarray
+        Sorted unique x values.
+    y_unique : numpy.ndarray
+        Sorted unique y values.
+    z_grid : numpy.ndarray
+        Grid values (float32), shape ``(len(y_unique), len(x_unique))``.
+        Missing grid points are filled with 0.
+
+    Raises
+    ------
+    ValueError
+        If ``method`` is not ``"linear"`` or ``"nearest"``.
     """
 
     # Load CSV data
@@ -200,18 +238,29 @@ def create_2d_function_from_csv(
 def create_multi_column_function_from_csv(
     csv_file_path: str, x_column: str, y_columns: List[str], method: str = "linear"
 ) -> Tuple[Callable, np.ndarray, np.ndarray]:
-    """
-    Create a Scipy function that returns multiple outputs from CSV data.
+    """Create interpolation functions for several columns of CSV data.
 
-    Args:
-        csv_file_path: Path to the CSV file
-        x_column: Name of the x-axis column (independent variable)
-        y_columns: List of column names for dependent variables
-        method: Interpolation method ('linear' or 'nearest')
+    Parameters
+    ----------
+    csv_file_path : str
+        Path to the CSV file; the separator is auto-detected.
+    x_column : str
+        Name of the independent variable column.
+    y_columns : list of str
+        Names of the dependent variable columns.
+    method : str, default "linear"
+        Interpolation kind passed to :class:`scipy.interpolate.interp1d`.
 
-    Returns:
-        Tuple of (scipy_function, x_data, y_data_array)
-        where scipy_function returns an array of interpolated values
+    Returns
+    -------
+    function : callable
+        ``function(x)`` returning a list with one
+        :class:`scipy.interpolate.interp1d` per column of ``y_columns``.
+        The argument ``x`` is currently ignored.
+    x_data : numpy.ndarray
+        x values, sorted ascending.
+    y_data : numpy.ndarray
+        y values, shape ``(n_points, len(y_columns))``.
     """
 
     # Load CSV data
@@ -245,19 +294,37 @@ def create_parametric_function_from_csv(
     y_column: str,
     method: str = "linear",
 ) -> Tuple[Callable, np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Create a parametric Scipy function from CSV data: y = f(x, param).
+    """Create a parametric interpolation function y = f(x, param) from CSV data.
 
-    Args:
-        csv_file_path: Path to the CSV file
-        param_column: Name of the parameter column
-        x_column: Name of the x-axis column
-        y_column: Name of the y-axis column (dependent variable)
-        method: Interpolation method ('linear' or 'nearest')
+    Parameters
+    ----------
+    csv_file_path : str
+        Path to the CSV file; the separator is auto-detected.
+    param_column : str
+        Name of the parameter column.
+    x_column : str
+        Name of the independent variable column.
+    y_column : str
+        Name of the dependent variable column.
+    method : {"linear", "nearest"}, default "linear"
+        ``"linear"`` uses inverse-distance weighting over all points;
+        ``"nearest"`` returns the value of the closest point.
 
-    Returns:
-        Tuple of (scipy_function, param_data, x_data, y_data)
-        where scipy_function takes (x, param) and returns interpolated y
+    Returns
+    -------
+    function : callable
+        ``function(x, param)`` returning the interpolated y (scalar inputs).
+    param_data : numpy.ndarray
+        Parameter values, in file order.
+    x_data : numpy.ndarray
+        x values, in file order.
+    y_data : numpy.ndarray
+        y values, in file order.
+
+    Raises
+    ------
+    ValueError
+        If ``method`` is not ``"linear"`` or ``"nearest"``.
     """
 
     # Load CSV data

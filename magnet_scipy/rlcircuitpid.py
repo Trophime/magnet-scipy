@@ -1,6 +1,6 @@
 import sys
 import numpy as np
-from typing import Tuple, List, Dict
+from typing import Any, Callable, Tuple, List, Dict, Optional
 
 # Import the new PID controller and CSV utilities
 from .pid_controller import PIDController, create_adaptive_pid_controller
@@ -18,31 +18,47 @@ class RLCircuitPID:
         self,
         R: float = 1.0,
         L: float = 0.1,
-        pid_controller: PIDController = None,
-        reference_csv: str = None,
-        voltage_csv: str = None,
-        resistance_csv: str = None,
+        pid_controller: Optional[PIDController] = None,
+        reference_csv: Optional[str] = None,
+        voltage_csv: Optional[str] = None,
+        resistance_csv: Optional[str] = None,
         temperature: float = 25.0,
-        temperature_csv: str = None,
-        circuit_id: str = None,
-        experimental_data: List[dict] = None,  # NEW: Experimental data list
+        temperature_csv: Optional[str] = None,
+        circuit_id: Optional[str] = None,
+        experimental_data: Optional[List[dict]] = None,  # NEW: Experimental data list
         # Backward compatibility: individual PID parameters (deprecated)
         **pid_kwargs,
     ):
-        """
-        Initialize circuit parameters with adaptive PID controller
+        """Initialize circuit parameters with adaptive PID controller.
 
-        Args:
-            R: Constant resistance (Ohms) - used if resistance_csv is None
-            L: Inductance (Henry)
-            pid_controller: PIDController instance for managing adaptive PID gains
-            reference_csv: Path to CSV file with reference current data
-            resistance_csv: Path to CSV file with resistance data R(I, Tin)
-            temperature: Temperature (°C) for resistance calculation
-            temperature_csv: Path to CSV file with temperature Tin data
-            circuit_id: Unique identifier for this circuit (required for coupled systems)
-            experimental_data: List of ExperimentalData objects for experimental validation
-            **pid_kwargs: Backward compatibility parameters for creating PID controller
+        Parameters
+        ----------
+        R : float, default 1.0
+            Constant resistance [Ω]; used if ``resistance_csv`` is None.
+        L : float, default 0.1
+            Inductance [H].
+        pid_controller : PIDController, optional
+            Controller managing the adaptive PID gains. If None and
+            ``voltage_csv`` is None, one is built from ``pid_kwargs``.
+        reference_csv : str, optional
+            Path to a CSV file with the reference current [A] vs time [s].
+        voltage_csv : str, optional
+            Path to a CSV file with the input voltage [V] vs time [s]
+            (voltage-driven mode, no PID controller).
+        resistance_csv : str, optional
+            Path to a CSV file with resistance data R(I, Tin) [Ω].
+        temperature : float, default 25.0
+            Inlet temperature [°C] for the resistance calculation.
+        temperature_csv : str, optional
+            Path to a CSV file with the inlet temperature Tin [°C] vs time [s].
+        circuit_id : str, optional
+            Unique identifier for this circuit (required for coupled systems).
+        experimental_data : list of dict, optional
+            Experimental data for validation; each dict has ``"file"``,
+            ``"type"`` and ``"key"`` (column name) entries.
+        **pid_kwargs
+            Deprecated individual PID parameters, used to build a controller
+            when ``pid_controller`` is not given.
         """
         self.L = L
         self.temperature = temperature
@@ -55,11 +71,11 @@ class RLCircuitPID:
             experimental_data if experimental_data is not None else []
         )
 
-        # Load experimental data functions
-        # self._load_experimental_data()
+        # Experimental data functions are loaded lazily (see _load_experimental_data)
+        self.experimental_functions: Dict[str, Dict[str, Any]] = {}
 
         # Initialize PID controller
-        self.pid_controller = None
+        self.pid_controller: Optional[PIDController] = None
         if pid_controller is not None:
             self.pid_controller = pid_controller
         else:
@@ -80,10 +96,10 @@ class RLCircuitPID:
             print(f"Using constant resistance: {R} Ω")
 
         # Always initialize these to None first - PREVENTS AttributeError
-        self.temperature_func = None
-        self.reference_func = None
-        self.reference_derivative_func = None
-        self.voltage_func = None
+        self.temperature_func: Optional[Callable] = None
+        self.reference_func: Optional[Callable] = None
+        self.reference_derivative_func: Optional[Callable] = None
+        self.voltage_func: Optional[Callable] = None
         self.use_csv_data = False
 
         # Load reference current from CSV if provided
@@ -135,7 +151,7 @@ class RLCircuitPID:
         # Validate new entry
         combination = (exp_data["type"], exp_data["key"])
         for existing in self.experimental_data:
-            if (existing.type, existing.key) == combination:
+            if (existing["type"], existing["key"]) == combination:
                 raise ValueError(
                     f'Experimental data entry already exists: type={exp_data["type"]}, key={exp_data["key"]}'
                 )
@@ -188,7 +204,7 @@ class RLCircuitPID:
         """returns keys associated to experimental_data with a given data_type"""
         return [exp["key"] for exp in self.experimental_data if exp["type"] == data_type]
 
-    def has_experimental_data(self, data_type: str, key: str = None) -> bool:
+    def has_experimental_data(self, data_type: str, key: Optional[str] = None) -> bool:
         """Check if experimental data exists for given type and optionally key"""
         if key is None:
             return any(exp["type"] == data_type for exp in self.experimental_data)
@@ -324,16 +340,27 @@ class RLCircuitPID:
             raise RuntimeError(f"Error loading CSV file {csv_file}: {e}")
 
     def get_pid_parameters(self, i_ref: float) -> Tuple[float, float, float]:
-        """
-        Get PID parameters based on reference current magnitude
-        Delegates to the PID controller
+        """Get PID gains for the region selected by the reference current.
 
-        Args:
-            i_ref: Reference current value
+        Delegates to the PID controller.
 
-        Returns:
-            Tuple of (Kp, Ki, Kd) for the current operating region
+        Parameters
+        ----------
+        i_ref : float
+            Reference current [A].
+
+        Returns
+        -------
+        tuple of float
+            ``(Kp, Ki, Kd)`` [V/A, V/(A·s), V·s/A] for the operating region.
+
+        Raises
+        ------
+        RuntimeError
+            If the circuit has no PID controller.
         """
+        if self.pid_controller is None:
+            raise RuntimeError(f"Circuit {self.circuit_id} has no PID controller")
         return self.pid_controller.get_pid_parameters(i_ref)
 
     def get_current_region(self, i_ref: float) -> str:
@@ -341,9 +368,11 @@ class RLCircuitPID:
         Get the current operating region name for logging/plotting
         Delegates to the PID controller
         """
+        if self.pid_controller is None:
+            raise RuntimeError(f"Circuit {self.circuit_id} has no PID controller")
         return self.pid_controller.get_current_region_name(i_ref)
 
-    def get_resistance(self, current: float, temperature: float = None) -> float:
+    def get_resistance(self, current: float, temperature: Optional[float] = None) -> float:
         """Get resistance value based on current and temperature"""
         if self.use_variable_resistance:
             if temperature is None:
@@ -354,13 +383,15 @@ class RLCircuitPID:
 
     def get_temperature(self, t: float) -> float:
         """Get input temperature at time t"""
-        if self.use_variable_temperature:
+        if self.use_variable_temperature and self.temperature_func is not None:
             return self.temperature_func(t)
         else:
             return self.temperature
 
     def reference_current(self, t: float) -> float:
         """Get reference current at time t"""
+        if self.reference_func is None:
+            raise RuntimeError(f"Circuit {self.circuit_id} has no reference current")
         return self.reference_func(t)
 
     def reference_current_derivative(self, t: float) -> float:
@@ -371,10 +402,14 @@ class RLCircuitPID:
         with a finite difference, since the reference is piecewise-linear
         and its derivative is therefore piecewise-constant.
         """
+        if self.reference_derivative_func is None:
+            raise RuntimeError(f"Circuit {self.circuit_id} has no reference current")
         return float(self.reference_derivative_func(t))
 
     def input_voltage(self, t: float) -> float:
         """Get input voltage at time t"""
+        if self.voltage_func is None:
+            raise RuntimeError(f"Circuit {self.circuit_id} has no input voltage")
         return self.voltage_func(t)
 
     def vector_field(self, t, y, di_ref_dt: float = 0):
@@ -406,7 +441,7 @@ class RLCircuitPID:
 
         return np.array([di_dt, dintegral_dt])
 
-    def voltage_vector_field(self, t: float, y, u: float = None):
+    def voltage_vector_field(self, t: float, y, u: Optional[float] = None):
         """
         RL circuit ODE
         """
@@ -481,7 +516,7 @@ class RLCircuitPID:
         self.circuit_id = circuit_id
         print(f"Circuit ID changed from '{old_id}' to '{circuit_id}'")
 
-    def copy(self, new_circuit_id: str = None):
+    def copy(self, new_circuit_id: Optional[str] = None):
         """Create a copy of this circuit with optionally different ID"""
         if new_circuit_id is None:
             import uuid

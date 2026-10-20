@@ -5,24 +5,12 @@ Breaking change: Local SimulationResult class removed, imports enhanced version
 """
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Tuple, Any, Optional
 import numpy as np
 from scipy.integrate import solve_ivp
 
 # Version 3.0: Import unified SimulationResult from cli_simulation
 from .simulation_types import SimulationResult, SimulationParameters
-
-@dataclass
-class SimulationParameters:
-    """Unified simulation parameters for all strategies"""
-    t_start: float
-    t_end: float
-    dt: float
-    method: str = "RK45"
-    rtol: float = 1e-6
-    atol: float = 1e-9
-    initial_values: List[float] = None
 
 
 class SimulationStrategy(ABC):
@@ -316,7 +304,7 @@ class SimulationRunner:
     """
     
     def __init__(self):
-        self.strategies = {
+        self.strategies: Dict[str, Optional[SimulationStrategy]] = {
             "voltage": VoltageInputStrategy(),
             "pid": PIDControlStrategy(),
             "hybrid": None  # Created on demand
@@ -356,7 +344,7 @@ class SimulationRunner:
             else:
                 raise ValueError("Circuit configuration doesn't match any strategy")
     
-    def run_simulation(self, system, params: SimulationParameters, strategy_name: str = None) -> SimulationResult:
+    def run_simulation(self, system, params: SimulationParameters, strategy_name: Optional[str] = None) -> SimulationResult:
         """
         Run simulation using specified or auto-detected strategy
         Version 3.0: Returns enhanced SimulationResult with all required fields
@@ -365,10 +353,9 @@ class SimulationRunner:
         if strategy_name is None:
             strategy_name = self.detect_strategy(system)
         
-        if strategy_name not in self.strategies:
-            raise ValueError(f"Unknown strategy: {strategy_name}")
-        
-        strategy = self.strategies[strategy_name]
+        strategy = self.strategies.get(strategy_name)
+        if strategy is None:
+            raise ValueError(f"Unknown or unavailable strategy: {strategy_name}")
         
         # Validate system compatibility
         errors = strategy.validate_system(system)
@@ -414,10 +401,9 @@ class SimulationRunner:
     
     def get_strategy_info(self, strategy_name: str) -> dict:
         """Get information about a specific strategy"""
-        if strategy_name not in self.strategies or self.strategies[strategy_name] is None:
+        strategy = self.strategies.get(strategy_name)
+        if strategy is None:
             raise ValueError(f"Unknown or unavailable strategy: {strategy_name}")
-        
-        strategy = self.strategies[strategy_name]
         return {
             "name": strategy_name,
             "description": strategy.__doc__.strip() if strategy.__doc__ else "No description",

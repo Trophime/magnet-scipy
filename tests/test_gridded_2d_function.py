@@ -30,8 +30,8 @@ def create_test_gridded_csv(filename: str = "test_grid.csv"):
     df.to_csv(filename, index=False)
     print(f"Created test gridded CSV: {filename}")
     print(f"Grid dimensions: {len(x_vals)} x {len(y_vals)} = {len(df)} points")
-    print(f"X range: {x_vals.min():.2f} to {x_vals.max():.2f}")
-    print(f"Y range: {y_vals.min():.2f} to {y_vals.max():.2f}")
+    print(f"X range: {np.min(x_vals):.2f} to {np.max(x_vals):.2f}")
+    print(f"Y range: {np.min(y_vals):.2f} to {np.max(y_vals):.2f}")
     print("Sample data:")
     print(df.head(10))
 

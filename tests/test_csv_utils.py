@@ -458,7 +458,7 @@ class TestCSVUtilsEdgeCases:
             result = scipy_fun(2.0)
             assert np.isfinite(result)
 
-        except (pd.errors.Error, ValueError):
+        except (pd.errors.ParserError, ValueError):
             # It's acceptable to fail with malformed CSV
             pass
 
@@ -570,7 +570,7 @@ class TestCSVUtilsErrorRecovery:
             result = scipy_fun(1.5)
             assert np.isfinite(result)
 
-        except (ValueError, pd.errors.Error) as e:
+        except (ValueError, pd.errors.ParserError) as e:
             # Acceptable to fail with clear error message
             assert "corrupted" in str(e).lower() or "convert" in str(e).lower()
 

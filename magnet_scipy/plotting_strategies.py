@@ -6,7 +6,7 @@ Eliminates mode-switching complexity in plotting functions
 """
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Optional, Any
 import numpy as np
 import matplotlib.pyplot as plt
@@ -30,12 +30,10 @@ class PlotConfiguration:
     linewidth_main: float = 2.0
     linewidth_experimental: float = 1.0
     grid_alpha: float = 0.3
-    colors: Optional[List[str]] = None
-    
-    def __post_init__(self):
-        if self.colors is None:
-            # Default color palette
-            self.colors = plt.cm.Set1(np.linspace(0, 1, 10)).tolist()
+    # Default color palette
+    colors: List = field(
+        default_factory=lambda: plt.cm.Set1(np.linspace(0, 1, 10)).tolist()
+    )
 
 
 @dataclass
@@ -50,7 +48,7 @@ class ProcessedResults:
 class PlottingStrategy(ABC):
     """Abstract base class for different plotting strategies"""
     
-    def __init__(self, config: PlotConfiguration = None):
+    def __init__(self, config: Optional[PlotConfiguration] = None):
         self.config = config or PlotConfiguration()
     
     @abstractmethod
@@ -68,13 +66,13 @@ class PlottingStrategy(ABC):
         self, 
         results: ProcessedResults, 
         system,
-        save_path: str = None,
+        save_path: Optional[str] = None,
         show: bool = True
     ) -> Figure:
         """Create the complete plot figure"""
         pass
     
-    def setup_axis(self, ax: Axes, title: str, ylabel: str, xlabel: str = None):
+    def setup_axis(self, ax: Axes, title: str, ylabel: str, xlabel: Optional[str] = None):
         """Common axis setup"""
         ax.set_title(title)
         ax.set_ylabel(ylabel)
@@ -97,7 +95,7 @@ class PlottingStrategy(ABC):
         
         exp_key = key
         if exp_key not in circuit_data["experimental_functions"]:
-            print(f"{exp_key} not in {circuit_data["experimental_functions"].keys()}")
+            print(f"{exp_key} not in {circuit_data['experimental_functions'].keys()}")
             return
         
         exp_info = circuit_data["experimental_functions"][exp_key]
@@ -245,7 +243,7 @@ class VoltageInputPlottingStrategy(PlottingStrategy):
         self,
         results: ProcessedResults,
         system,
-        save_path: str = None,
+        save_path: Optional[str] = None,
         show: bool = True
     ) -> Figure:
         """Create voltage simulation plots"""
@@ -429,7 +427,8 @@ class PIDControlPlottingStrategy(PlottingStrategy):
         
         # Calculate control signals and errors
         error = i_ref - current
-        derivative_error = np.gradient(error, t[1] - t[0])
+        # solver output is not uniformly spaced: differentiate against t itself
+        derivative_error = np.gradient(error, t)
         
         Kp_array = np.array(Kp_over_time)
         Ki_array = np.array(Ki_over_time)
@@ -535,7 +534,7 @@ class PIDControlPlottingStrategy(PlottingStrategy):
         self,
         results: ProcessedResults,
         system,
-        save_path: str = None,
+        save_path: Optional[str] = None,
         show: bool = True
     ) -> Figure:
         """Create PID control plots"""

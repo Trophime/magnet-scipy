@@ -44,6 +44,8 @@ from .pid_controller import (
 from .csv_utils import (
     create_function_from_csv,
     create_2d_function_from_csv,
+    create_multi_column_function_from_csv,
+    create_parametric_function_from_csv,
 )
 
 
@@ -62,12 +64,11 @@ __all__ = [
     "create_default_pid_controller",
     "create_adaptive_pid_controller",
     "create_custom_pid_controller",
-    "create_example_coupled_circuits",
     # CSV utilities
-    "create_scipy_function_from_csv",
-    "create_2d_scipy_function_from_csv",
-    "create_multi_column_scipy_function_from_csv",
-    "create_parametric_scipy_function_from_csv",
+    "create_function_from_csv",
+    "create_2d_function_from_csv",
+    "create_multi_column_function_from_csv",
+    "create_parametric_function_from_csv",
 ]
 
 
@@ -77,11 +78,13 @@ def get_version() -> str:
 
 
 def check_dependencies() -> dict:
-    """
-    Check if all required dependencies are available.
+    """Check if all required dependencies are available.
 
-    Returns:
-        Dictionary with dependency status information
+    Returns
+    -------
+    dict
+        ``"dependencies"``: mapping of package name to availability (bool);
+        ``"all_required"``: True if scipy, numpy and pandas are all available.
     """
     deps = {
         "Scipy": False,

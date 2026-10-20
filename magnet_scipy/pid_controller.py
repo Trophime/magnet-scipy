@@ -39,20 +39,31 @@ class PIDController:
     their own parameters and threshold values.
     """
 
-    def __init__(self, regions: Dict[str, RegionConfig] = None):
-        """
-        Initialize adaptive PID controller with named regions
+    def __init__(self, regions: Optional[Dict[str, RegionConfig]] = None):
+        """Initialize adaptive PID controller with named regions.
 
-        Args:
-            regions: Dictionary mapping region names to RegionConfig objects
-                    Regions should be ordered from lowest to highest current
+        Parameters
+        ----------
+        regions : dict of str to RegionConfig, optional
+            Region name to configuration, ordered from lowest to highest
+            current. Thresholds [A] must be ascending and exactly one region
+            (the highest) has ``threshold=None``. If None, default
+            low/medium/high regions with thresholds 60 and 800 A are used.
 
-        Example:
-            regions = {
-                "low": RegionConfig(PIDParams(10.0, 5.0, 0.1), threshold=60.0),
-                "medium": RegionConfig(PIDParams(15.0, 8.0, 0.05), threshold=800.0),
-                "high": RegionConfig(PIDParams(25.0, 12.0, 0.02))  # No threshold (highest)
-            }
+        Raises
+        ------
+        ValueError
+            If ``regions`` is empty, thresholds are not ascending, or not
+            exactly one region has ``threshold=None``.
+
+        Examples
+        --------
+        >>> regions = {
+        ...     "low": RegionConfig(PIDParams(10.0, 5.0, 0.1), threshold=60.0),
+        ...     "medium": RegionConfig(PIDParams(15.0, 8.0, 0.05), threshold=800.0),
+        ...     "high": RegionConfig(PIDParams(25.0, 12.0, 0.02)),
+        ... }
+        >>> controller = PIDController(regions)
         """
 
         if regions is None:
@@ -118,14 +129,19 @@ class PIDController:
         self.kd_values = np.array(kd_values)
 
     def get_pid_parameters(self, i_ref: float) -> Tuple[float, float, float]:
-        """
-        Get PID parameters based on reference current magnitude (Scipy-compatible)
+        """Get PID gains for the region selected by the reference current.
 
-        Args:
-            i_ref: Reference current value
+        The region is the first one whose threshold exceeds ``|i_ref|``.
 
-        Returns:
-            Tuple of (Kp, Ki, Kd) for the current operating region
+        Parameters
+        ----------
+        i_ref : float
+            Reference current [A].
+
+        Returns
+        -------
+        tuple of float
+            ``(Kp, Ki, Kd)`` [V/A, V/(A·s), V·s/A] for the operating region.
         """
         abs_i_ref = np.abs(i_ref)
 
@@ -142,14 +158,17 @@ class PIDController:
         return Kp, Ki, Kd
 
     def get_current_region_name(self, i_ref: float) -> str:
-        """
-        Get the current operating region name based on reference current
+        """Get the operating region name for a reference current.
 
-        Args:
-            i_ref: Reference current value
+        Parameters
+        ----------
+        i_ref : float
+            Reference current [A].
 
-        Returns:
-            String indicating the current region name
+        Returns
+        -------
+        str
+            Name of the operating region.
         """
         abs_i_ref = np.abs(i_ref)
         below_threshold = abs_i_ref < self.thresholds
@@ -157,26 +176,39 @@ class PIDController:
         return self.region_names[region_idx]
 
     def get_region_index(self, i_ref):
-        """
-        Scipy-compatible version that returns region index instead of name
+        """Get the operating region index for a reference current.
 
-        Args:
-            i_ref: Reference current value
+        Array-friendly counterpart of :meth:`get_current_region_name`.
 
-        Returns:
-            Integer index of the current region
+        Parameters
+        ----------
+        i_ref : float or numpy.ndarray
+            Reference current [A].
+
+        Returns
+        -------
+        int or numpy.ndarray
+            Index of the operating region in :attr:`region_names`.
         """
         abs_i_ref = np.abs(i_ref)
         below_threshold = abs_i_ref < self.thresholds
         return np.argmax(below_threshold)
 
     def add_region(self, name: str, config: RegionConfig):
-        """
-        Add a new region to the controller
+        """Add a new region to the controller.
 
-        Args:
-            name: Name of the new region
-            config: RegionConfig object for the new region
+        Parameters
+        ----------
+        name : str
+            Name of the new region.
+        config : RegionConfig
+            Configuration of the new region.
+
+        Raises
+        ------
+        ValueError
+            If the region already exists or the resulting configuration is
+            invalid.
         """
         if name in self.regions:
             raise ValueError(f"Region '{name}' already exists")
@@ -186,11 +218,18 @@ class PIDController:
         self._setup_arrays()
 
     def remove_region(self, name: str):
-        """
-        Remove a region from the controller
+        """Remove a region from the controller.
 
-        Args:
-            name: Name of the region to remove
+        Parameters
+        ----------
+        name : str
+            Name of the region to remove.
+
+        Raises
+        ------
+        ValueError
+            If the region does not exist, is the last one, or the resulting
+            configuration is invalid.
         """
         if name not in self.regions:
             raise ValueError(f"Region '{name}' does not exist")
@@ -203,12 +242,20 @@ class PIDController:
         self._setup_arrays()
 
     def update_region(self, name: str, config: RegionConfig):
-        """
-        Update an existing region's configuration
+        """Update an existing region's configuration.
 
-        Args:
-            name: Name of the region to update
-            config: New RegionConfig object
+        Parameters
+        ----------
+        name : str
+            Name of the region to update.
+        config : RegionConfig
+            New configuration.
+
+        Raises
+        ------
+        ValueError
+            If the region does not exist or the resulting configuration is
+            invalid.
         """
         if name not in self.regions:
             raise ValueError(f"Region '{name}' does not exist")
@@ -222,11 +269,12 @@ class PIDController:
         return list(self.regions.keys())
 
     def get_thresholds(self) -> Dict[str, Optional[float]]:
-        """
-        Get all thresholds as a dictionary
+        """Get all thresholds as a dictionary.
 
-        Returns:
-            Dictionary mapping region names to their thresholds
+        Returns
+        -------
+        dict of str to float or None
+            Region name to threshold [A]; None for the highest region.
         """
         return {name: config.threshold for name, config in self.regions.items()}
 
@@ -253,11 +301,12 @@ class PIDController:
 
 
 def create_default_pid_controller() -> PIDController:
-    """
-    Create a PID controller with standard low/medium/high regions
+    """Create a PID controller with standard low/medium/high regions.
 
-    Returns:
-        Configured PIDController instance with default regions
+    Returns
+    -------
+    PIDController
+        Controller with thresholds 60 and 800 A.
     """
     regions = {
         "low": RegionConfig(PIDParams(10.0, 5.0, 0.1), threshold=60.0),
@@ -284,11 +333,25 @@ def create_adaptive_pid_controller(
     low_threshold: float = 60.0,
     high_threshold: float = 800.0,
 ) -> PIDController:
-    """
-    Create an adaptive PID controller with commonly used parameters (backward compatibility)
+    """Create a low/medium/high adaptive PID controller (backward compatibility).
 
-    Returns:
-        Configured PIDController instance
+    Parameters
+    ----------
+    Kp_low, Ki_low, Kd_low : float
+        Gains for ``|i_ref| < low_threshold`` [V/A, V/(A·s), V·s/A].
+    Kp_medium, Ki_medium, Kd_medium : float
+        Gains for ``low_threshold <= |i_ref| < high_threshold``.
+    Kp_high, Ki_high, Kd_high : float
+        Gains for ``|i_ref| >= high_threshold``.
+    low_threshold : float, default 60.0
+        Upper bound of the low region [A].
+    high_threshold : float, default 800.0
+        Upper bound of the medium region [A].
+
+    Returns
+    -------
+    PIDController
+        Configured controller.
     """
     regions = {
         "low": RegionConfig(PIDParams(Kp_low, Ki_low, Kd_low), threshold=low_threshold),
@@ -303,22 +366,35 @@ def create_adaptive_pid_controller(
 def create_custom_pid_controller(
     region_configs: Dict[str, Tuple[Tuple[float, float, float], Optional[float]]],
 ) -> PIDController:
-    """
-    Create a custom PID controller with arbitrary regions
+    """Create a custom PID controller with arbitrary regions.
 
-    Args:
-        region_configs: Dictionary mapping region names to ((Kp, Ki, Kd), threshold) tuples
-                       The last region should have threshold=None
+    Parameters
+    ----------
+    region_configs : dict of str to tuple
+        Mapping of region name to ``((Kp, Ki, Kd), threshold)``, with gains
+        Kp [V/A], Ki [V/(A·s)], Kd [V·s/A] and threshold [A] on ``|i_ref|``.
+        Thresholds must be ascending; exactly one region (the highest) has
+        ``threshold=None``.
 
-    Example:
-        configs = {
-            "startup": ((50.0, 30.0, 0.2), 10.0),
-            "normal": ((20.0, 15.0, 0.1), 100.0),
-            "overload": ((5.0, 2.0, 0.01), None)
-        }
+    Returns
+    -------
+    PIDController
+        Configured controller.
 
-    Returns:
-        Configured PIDController instance
+    Raises
+    ------
+    ValueError
+        If thresholds are not ascending or not exactly one region has
+        ``threshold=None``.
+
+    Examples
+    --------
+    >>> configs = {
+    ...     "startup": ((50.0, 30.0, 0.2), 10.0),
+    ...     "normal": ((20.0, 15.0, 0.1), 100.0),
+    ...     "overload": ((5.0, 2.0, 0.01), None),
+    ... }
+    >>> controller = create_custom_pid_controller(configs)
     """
     regions = {}
     for name, ((Kp, Ki, Kd), threshold) in region_configs.items():

@@ -36,7 +36,7 @@ class SimulationParameters:
     method: str = "RK45"
     rtol: float = 1e-6
     atol: float = 1e-9
-    initial_values: List[float] = None
+    initial_values: Optional[List[float]] = None
 
 
 # Version 3.0 Breaking Changes Notice

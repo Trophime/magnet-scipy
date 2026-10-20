@@ -210,7 +210,7 @@ def run_benchmark_workflow(coupled_system, time_params, output_options, plot_con
     print("🔍 Running coupled circuits plotting performance benchmark...")
     
     try:
-        from .coupled_plotting import benchmark_coupled_plotting_performance
+        from .plotting import benchmark_plotting_performance
         
         orchestrator = SimulationOrchestrator()
         simulation_result = orchestrator.run_coupled_simulation(
@@ -222,7 +222,7 @@ def run_benchmark_workflow(coupled_system, time_params, output_options, plot_con
             return 1
         
         # Benchmark the plotting performance
-        timing_results = benchmark_coupled_plotting_performance(simulation_result, coupled_system)
+        timing_results = benchmark_plotting_performance(simulation_result, coupled_system)
         
         print("📊 Coupled Circuits Plotting Performance Benchmark Results:")
         for operation, timing in timing_results.items():

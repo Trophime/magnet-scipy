@@ -5,12 +5,8 @@ Breaking change: Imports enhanced SimulationResult instead of conflicting local 
 """
 
 import numpy as np
-from typing import List
-from .simulation_strategies import (
-    VoltageInputStrategy, 
-    PIDControlStrategy,
-    SimulationParameters
-)
+from typing import List, Optional
+from .simulation_strategies import VoltageInputStrategy, PIDControlStrategy
 # Version 3.0: Import enhanced SimulationResult from cli_simulation to avoid conflicts
 from .simulation_types import SimulationResult, SimulationParameters
 
@@ -20,33 +16,33 @@ class SingleCircuitVoltageStrategy(VoltageInputStrategy):
     Version 3.0: Returns enhanced SimulationResult with all required fields
     """
     
-    def validate_system(self, circuit) -> List[str]:
+    def validate_system(self, system) -> List[str]:
         """Validate single circuit has voltage data"""
         errors = []
         
-        if not hasattr(circuit, 'voltage_csv') or circuit.voltage_csv is None:
+        if not hasattr(system, 'voltage_csv') or system.voltage_csv is None:
             errors.append("Circuit missing voltage CSV")
-        if not hasattr(circuit, 'voltage_func') or circuit.voltage_func is None:
+        if not hasattr(system, 'voltage_func') or system.voltage_func is None:
             errors.append("Circuit voltage function not loaded")
                 
         return errors
     
-    def get_initial_conditions(self, circuit, params: SimulationParameters) -> np.ndarray:
+    def get_initial_conditions(self, system, params: SimulationParameters) -> np.ndarray:
         """Initial conditions: just current for single circuit"""
         if params.initial_values:
             return np.array([params.initial_values[0]])
         else:
             return np.array([0.0])
     
-    def run_simulation(self, circuit, params: SimulationParameters) -> SimulationResult:
+    def run_simulation(self, system, params: SimulationParameters) -> SimulationResult:
         """Run voltage-driven simulation for single circuit"""
         from scipy.integrate import solve_ivp
         
-        y0 = self.get_initial_conditions(circuit, params)
+        y0 = self.get_initial_conditions(system, params)
         t_span = (params.t_start, params.t_end)
         
         def vector_field(t, y):
-            return circuit.voltage_vector_field(t, y)
+            return system.voltage_vector_field(t, y)
         
         sol = solve_ivp(
             vector_field,
@@ -68,10 +64,10 @@ class SingleCircuitVoltageStrategy(VoltageInputStrategy):
                 "message": sol.message,
                 "n_evaluations": sol.nfev,
                 "state_size": len(y0),
-                "circuit_id": circuit.circuit_id
+                "circuit_id": system.circuit_id
             },
             strategy_type="voltage_input",
-            circuit_ids=[circuit.circuit_id],  # Version 3.0: Required field
+            circuit_ids=[system.circuit_id],  # Version 3.0: Required field
             success=sol.success,                # Version 3.0: Required field
             error_message=sol.message if not sol.success else None  # Version 3.0: Required field
         )
@@ -83,20 +79,20 @@ class SingleCircuitPIDStrategy(PIDControlStrategy):
     Version 3.0: Returns enhanced SimulationResult with all required fields
     """
     
-    def validate_system(self, circuit) -> List[str]:
+    def validate_system(self, system) -> List[str]:
         """Validate single circuit has reference data and PID controller"""
         errors = []
         
-        if not hasattr(circuit, 'reference_csv') or circuit.reference_csv is None:
+        if not hasattr(system, 'reference_csv') or system.reference_csv is None:
             errors.append("Circuit missing reference CSV")
-        if not hasattr(circuit, 'reference_func') or circuit.reference_func is None:
+        if not hasattr(system, 'reference_func') or system.reference_func is None:
             errors.append("Circuit reference function not loaded")
-        if not hasattr(circuit, 'pid_controller') or circuit.pid_controller is None:
+        if not hasattr(system, 'pid_controller') or system.pid_controller is None:
             errors.append("Circuit missing PID controller")
                 
         return errors
     
-    def get_initial_conditions(self, circuit, params: SimulationParameters) -> np.ndarray:
+    def get_initial_conditions(self, system, params: SimulationParameters) -> np.ndarray:
         """Initial conditions: [current, integral_error] for single circuit"""
         if params.initial_values:
             current = params.initial_values[0]
@@ -105,17 +101,17 @@ class SingleCircuitPIDStrategy(PIDControlStrategy):
         integral_error = 0.0
         return np.array([current, integral_error])
     
-    def run_simulation(self, circuit, params: SimulationParameters) -> SimulationResult:
+    def run_simulation(self, system, params: SimulationParameters) -> SimulationResult:
         """Run PID control simulation for single circuit"""
         from scipy.integrate import solve_ivp
         
-        y0 = self.get_initial_conditions(circuit, params)
+        y0 = self.get_initial_conditions(system, params)
         t_span = (params.t_start, params.t_end)
         
         def vector_field(t, y):
             # Estimate reference derivative for single circuit
-            di_ref_dt = self._estimate_single_circuit_reference_derivative(circuit, t)
-            return circuit.vector_field(t, y, di_ref_dt=di_ref_dt)
+            di_ref_dt = self._estimate_single_circuit_reference_derivative(system, t)
+            return system.vector_field(t, y, di_ref_dt=di_ref_dt)
         
         sol = solve_ivp(
             vector_field,
@@ -137,21 +133,21 @@ class SingleCircuitPIDStrategy(PIDControlStrategy):
                 "message": sol.message,
                 "n_evaluations": sol.nfev,
                 "state_size": len(y0),
-                "circuit_id": circuit.circuit_id
+                "circuit_id": system.circuit_id
             },
             strategy_type="pid_control",
-            circuit_ids=[circuit.circuit_id],  # Version 3.0: Required field
+            circuit_ids=[system.circuit_id],  # Version 3.0: Required field
             success=sol.success,                # Version 3.0: Required field
             error_message=sol.message if not sol.success else None  # Version 3.0: Required field
         )
     
-    def _estimate_single_circuit_reference_derivative(self, circuit, t: float) -> float:
+    def _estimate_single_circuit_reference_derivative(self, system, t: float) -> float:
         """
         Exact derivative of the (piecewise-linear) reference current at time t,
         looked up from the CSV segment slope rather than estimated with a finite
         difference.
         """
-        return circuit.reference_current_derivative(t)
+        return system.reference_current_derivative(t)
 
 
 class SingleCircuitSimulationRunner:
@@ -179,7 +175,7 @@ class SingleCircuitSimulationRunner:
         else:
             raise ValueError("Circuit configuration doesn't match any strategy")
     
-    def run_simulation(self, circuit, params: SimulationParameters, strategy_name: str = None) -> SimulationResult:
+    def run_simulation(self, circuit, params: SimulationParameters, strategy_name: Optional[str] = None) -> SimulationResult:
         """
         Run simulation using specified or auto-detected strategy for single circuit
         Version 3.0: Returns enhanced SimulationResult with proper error handling
@@ -266,7 +262,7 @@ def create_simulation_runner(system):
 
 
 # Integration with the updated main.py
-def run_single_circuit_with_strategy(circuit, params: SimulationParameters, strategy_name: str = None):
+def run_single_circuit_with_strategy(circuit, params: SimulationParameters, strategy_name: Optional[str] = None):
     """
     Convenience function for running single circuit simulations
     Version 3.0: Returns enhanced SimulationResult

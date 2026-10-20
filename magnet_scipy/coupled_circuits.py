@@ -1,5 +1,5 @@
 import numpy as np
-from typing import List, Tuple
+from typing import List, Tuple, Optional, Union
 
 
 from .rlcircuitpid import RLCircuitPID
@@ -16,21 +16,33 @@ class CoupledRLCircuitsPID:
     def __init__(
         self,
         circuits: List[RLCircuitPID],  # List of RLCircuitPID instances
-        mutual_inductances: np.ndarray = None,
+        mutual_inductances: Optional[np.ndarray] = None,
     ):
-        """
-        Initialize coupled RL circuits
+        """Initialize coupled RL circuits.
 
-        Args:
-            circuits: List of RLCircuitPID instances
-            mutual_inductances: NxN matrix of mutual inductances M[i,j] between circuits i and j
-                               If None, creates symmetric coupling matrix
+        Parameters
+        ----------
+        circuits : list of RLCircuitPID
+            Circuits to couple; each must have a unique ``circuit_id``.
+        mutual_inductances : numpy.ndarray, optional
+            The N(N-1)/2 off-diagonal mutual inductances M[i, j] [H], in
+            row-major upper-triangular order (``numpy.triu_indices(N, k=1)``).
+            The diagonal is filled with each circuit's self-inductance and the
+            matrix is symmetrized.
+
+        Raises
+        ------
+        ValueError
+            If a circuit has no ``circuit_id``, IDs are duplicated, or
+            ``mutual_inductances`` has the wrong length.
+        RuntimeError
+            If ``mutual_inductances`` is None.
         """
         self.circuits = circuits
         self.n_circuits = len(circuits)
 
         # Validate that all circuits have circuit_id
-        self.circuit_ids = []
+        self.circuit_ids: List[str] = []
         for i, circuit in enumerate(self.circuits):
             if not hasattr(circuit, "circuit_id") or circuit.circuit_id is None:
                 raise ValueError(f"Circuit {i} must have a circuit_id")
@@ -101,7 +113,9 @@ class CoupledRLCircuitsPID:
         return circuit.reference_current(t)
 
     def get_resistances(
-        self, currents: List[float], temperatures: List[float] = None
+        self,
+        currents: Union[List[float], np.ndarray],
+        temperatures: Optional[List[float]] = None,
     ) -> List[float]:
         """Get resistance for a specific circuit"""
         # print(f"get_resistances: currents={currents}, temperatures={temperatures}")
@@ -143,7 +157,7 @@ class CoupledRLCircuitsPID:
         circuit = self.circuits[circuit_idx]
         return circuit.get_current_region(i_ref)
 
-    def voltage_vector_field(self, t: float, y, u: np.ndarray = None):
+    def voltage_vector_field(self, t: float, y, u: Optional[np.ndarray] = None):
         """
         RL circuit ODE
         """
@@ -182,9 +196,8 @@ class CoupledRLCircuitsPID:
             di_dt = np.linalg.pinv(self.M) @ net_voltages
         return di_dt
 
-    # TODO: by default make di_ref_dt: np.ndarray of dimensions ncircuits with zeros
     def vector_field(
-        self, t: float, y: np.ndarray, di_ref_dt: np.ndarray = None
+        self, t: float, y: np.ndarray, di_ref_dt: Optional[np.ndarray] = None
     ) -> np.ndarray:
         """
         Define the system dynamics as a vector field with variable resistance and adaptive PID
@@ -194,6 +207,9 @@ class CoupledRLCircuitsPID:
         - i: current
         - integral_error: integral of error for PID
         """
+        if di_ref_dt is None:
+            di_ref_dt = np.zeros(self.n_circuits)
+
         i = y[: self.n_circuits]
         integral_error = y[self.n_circuits :]
         # print(f"DEBUG: currents i={i} integram_error={integral_error}")
@@ -251,15 +267,24 @@ class CoupledRLCircuitsPID:
             raise ValueError("Circuit indices out of range")
 
         # Update symmetrically
-        self.M = self.M.at[i, j].set(M_ij)
-        self.M = self.M.at[j, i].set(M_ij)
+        self.M[i, j] = M_ij
+        self.M[j, i] = M_ij
 
     def add_circuit(self, circuit) -> None:
-        """
-        Add a new circuit to the system (requires rebuilding coupling matrix)
+        """Add a new circuit to the system (rebuilds the coupling matrix).
 
-        Args:
-            circuit: RLCircuitPID instance to add
+        The new circuit starts uncoupled: its mutual inductances to existing
+        circuits are zero.
+
+        Parameters
+        ----------
+        circuit : RLCircuitPID
+            Circuit to add; must have a ``circuit_id`` not already present.
+
+        Raises
+        ------
+        ValueError
+            If the circuit has no ``circuit_id`` or the ID already exists.
         """
         if not hasattr(circuit, "circuit_id") or circuit.circuit_id is None:
             raise ValueError("Circuit must have a circuit_id")
@@ -279,17 +304,24 @@ class CoupledRLCircuitsPID:
         new_M = np.zeros((self.n_circuits, self.n_circuits))
 
         # Copy old matrix
-        new_M = new_M.at[:old_n_circuits, :old_n_circuits].set(old_M)
+        new_M[:old_n_circuits, :old_n_circuits] = old_M
+        new_M[old_n_circuits, old_n_circuits] = circuit.L
 
         self.M = new_M
         print(f"Added circuit '{circuit.circuit_id}'")
 
     def remove_circuit(self, circuit_id: str) -> None:
-        """
-        Remove a circuit from the system
+        """Remove a circuit from the system.
 
-        Args:
-            circuit_id: ID of the circuit to remove
+        Parameters
+        ----------
+        circuit_id : str
+            ID of the circuit to remove.
+
+        Raises
+        ------
+        ValueError
+            If the ID is unknown or fewer than three circuits remain.
         """
         if circuit_id not in self.circuit_ids:
             raise ValueError(f"Circuit ID '{circuit_id}' not found")

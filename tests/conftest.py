@@ -222,9 +222,8 @@ def test_utils():
 
 
 # Skip tests if dependencies are missing
-def check_dependencies():
-    """Check if all required dependencies are available."""
-    required = ["jax", "jaxlib", "diffrax", "numpy", "pandas"]
+def check_dependencies(required):
+    """Return the subset of the given modules that cannot be imported."""
     missing = []
 
     for dep in required:
@@ -236,11 +235,27 @@ def check_dependencies():
     return missing
 
 
-missing_deps = check_dependencies()
+missing_deps = check_dependencies(["numpy", "pandas", "scipy", "matplotlib"])
 if missing_deps:
     pytest.skip(
         f"Missing required dependencies: {missing_deps}", allow_module_level=True
     )
+
+# Optional jax/diffrax stack: only tests marked with @pytest.mark.jax need it
+missing_jax_deps = check_dependencies(["jax", "jaxlib", "diffrax"])
+
+
+def pytest_collection_modifyitems(config, items):
+    """Skip tests marked 'jax' when the optional jax stack is not installed."""
+    if not missing_jax_deps:
+        return
+    skip_jax = pytest.mark.skip(
+        reason=f"Optional jax stack not installed: {missing_jax_deps} "
+        "(install with `uv sync --extra jax` or `pip install -e .[jax]`)"
+    )
+    for item in items:
+        if "jax" in item.keywords:
+            item.add_marker(skip_jax)
 
 
 # Performance testing utilities

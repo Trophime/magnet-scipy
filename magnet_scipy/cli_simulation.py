@@ -6,8 +6,7 @@ Breaking changes: All legacy classes removed, only essential components remain
 """
 
 import numpy as np
-from typing import List, Dict, Any, Tuple, Optional
-from dataclasses import dataclass
+from typing import List, Tuple
 
 from .cli_core import TimeParameters, OutputOptions, ValidationHelper
 from .simulation_types import SimulationResult, SimulationParameters
@@ -16,18 +15,6 @@ from .single_circuit_adapter import SingleCircuitSimulationRunner
 from .rlcircuitpid import RLCircuitPID
 from .coupled_circuits import CoupledRLCircuitsPID
 from .cli_plotting_integration import EnhancedPlottingManager
-
-
-@dataclass
-class SimulationResult:
-    """Enhanced simulation result with metadata - Version 3.0 unified structure"""
-    time: np.ndarray
-    solution: np.ndarray
-    metadata: Dict[str, Any]
-    strategy_type: str
-    circuit_ids: List[str]
-    success: bool = True
-    error_message: Optional[str] = None
 
 
 class SimulationOrchestrator:
@@ -87,9 +74,9 @@ class SimulationOrchestrator:
                 solution=result.solution,
                 metadata=result.metadata,
                 strategy_type=result.strategy_type,
-                circuit_ids=[circuit.circuit_id],
-                success=result.metadata["success"],
-                error_message=result.metadata["message"] if not result.metadata["success"] else None
+                circuit_ids=[circuit.circuit_id or "single_circuit"],
+                success=result.success,
+                error_message=result.error_message
             )
             
         except Exception as e:
@@ -98,7 +85,7 @@ class SimulationOrchestrator:
                 solution=np.array([]),
                 metadata={},
                 strategy_type="failed",
-                circuit_ids=[circuit.circuit_id],
+                circuit_ids=[circuit.circuit_id or "single_circuit"],
                 success=False,
                 error_message=str(e)
             )
@@ -151,7 +138,7 @@ class SimulationOrchestrator:
                 solution=result.solution,
                 metadata=result.metadata,
                 strategy_type=result.strategy_type,
-                circuit_ids=[c.circuit_id for c in coupled_system.circuits],
+                circuit_ids=list(coupled_system.circuit_ids),
                 success=result.metadata.get("success", True),
                 error_message=result.metadata.get("message", None) if not result.metadata.get("success", True) else None
             )
@@ -162,7 +149,7 @@ class SimulationOrchestrator:
                 solution=np.array([]),
                 metadata={},
                 strategy_type="failed",
-                circuit_ids=[c.circuit_id for c in coupled_system.circuits],
+                circuit_ids=list(coupled_system.circuit_ids),
                 success=False,
                 error_message=str(e)
             )

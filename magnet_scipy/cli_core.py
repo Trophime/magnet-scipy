@@ -123,7 +123,7 @@ class ArgumentParser:
             "--time_step", 
             type=float, 
             default=0.001, 
-            help="Simulation time step in seconds"
+            help="Maximum solver time step in seconds (max_step of the adaptive solver)"
         )
         
         parser.add_argument(

@@ -7,16 +7,16 @@ Breaking changes: All legacy wrapper functions removed, only new system function
 
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Optional
 
-from .plotting_core import PlottingManager
+from .plotting_core import PlottingManager, as_solution
 from .plotting_strategies import PlotConfiguration
 
 # Global plotting manager instance
 _plotting_manager = None
 
 
-def get_plotting_manager(config: PlotConfiguration = None) -> PlottingManager:
+def get_plotting_manager(config: Optional[PlotConfiguration] = None) -> PlottingManager:
     """Get or create the global plotting manager instance"""
     global _plotting_manager
     if _plotting_manager is None or config is not None:
@@ -48,26 +48,37 @@ def configure_plotting(
 def create_advanced_plots(
     sol,
     system,
-    strategy_type: str = None,
-    save_path: str = None,
+    strategy_type: Optional[str] = None,
+    save_path: Optional[str] = None,
     show: bool = True,
     show_analytics: bool = True,
-    config: PlotConfiguration = None,
+    config: Optional[PlotConfiguration] = None,
 ):
-    """
-    Create advanced plots using the new plotting system
+    """Create plots for a simulation result using the plotting strategies.
 
-    Args:
-        sol: Solution object from scipy.integrate.solve_ivp
-        system: Circuit or coupled system instance
-        strategy_type: "voltage_input", "pid_control", or None for auto-detect
-        save_path: Path to save plots (optional)
-        show: Whether to display plots
-        show_analytics: Whether to display analytics
-        config: Custom plotting configuration
+    Parameters
+    ----------
+    sol : scipy.integrate.OdeResult or SimulationResult
+        Solution to plot.
+    system : RLCircuitPID or CoupledRLCircuitsPID
+        Simulated circuit or coupled system.
+    strategy_type : {"voltage_input", "pid_control"}, optional
+        Plotting strategy; auto-detected if None.
+    save_path : str, optional
+        Path to save the plots.
+    show : bool, default True
+        Whether to display the plots.
+    show_analytics : bool, default True
+        Whether to print the analytics.
+    config : PlotConfiguration, optional
+        Custom plotting configuration.
 
-    Returns:
-        Tuple of (ProcessedResults, analytics_dict)
+    Returns
+    -------
+    results : ProcessedResults
+        Processed simulation data.
+    analytics : dict
+        Circuit performance analytics.
     """
     manager = get_plotting_manager(config)
     return manager.create_plots(
@@ -77,28 +88,39 @@ def create_advanced_plots(
 
 def create_comparison_plots(
     solutions_and_systems: list,
-    labels: list = None,
-    save_path: str = None,
+    labels: Optional[list] = None,
+    save_path: Optional[str] = None,
     show: bool = True,
-    config: PlotConfiguration = None,
+    config: Optional[PlotConfiguration] = None,
 ):
-    """
-    Create comparison plots between multiple simulations
+    """Create comparison plots between multiple simulations.
 
-    Args:
-        solutions_and_systems: List of (sol, system) tuples
-        labels: Labels for each simulation (optional)
-        save_path: Path to save plots (optional)
-        show: Whether to display plots
-        config: Custom plotting configuration
+    Parameters
+    ----------
+    solutions_and_systems : list of tuple
+        ``(sol, system)`` pairs to compare.
+    labels : list of str, optional
+        Label for each simulation; defaults to ``"Simulation 1"``, ...
+    save_path : str, optional
+        Path to save the plots.
+    show : bool, default True
+        Whether to display the plots.
+    config : PlotConfiguration, optional
+        Custom plotting configuration.
 
-    Returns:
-        matplotlib Figure object
+    Returns
+    -------
+    matplotlib.figure.Figure
+        The comparison figure.
     """
     manager = get_plotting_manager(config)
-    return manager.create_comparison_plots(
-        solutions_and_systems, labels, save_path, show
-    )
+    if labels is None:
+        labels = [f"Simulation {i + 1}" for i in range(len(solutions_and_systems))]
+    results_list = [
+        (manager.prepare_results(sol, system), label)
+        for (sol, system), label in zip(solutions_and_systems, labels)
+    ]
+    return manager.create_comparison_plots(results_list, save_path, show)
 
 
 def create_custom_plot(
@@ -107,25 +129,40 @@ def create_custom_plot(
     title: str = "Custom Plot",
     xlabel: str = "X",
     ylabel: str = "Y",
-    save_path: str = None,
+    save_path: Optional[str] = None,
     show: bool = True,
-    config: PlotConfiguration = None,
+    config: Optional[PlotConfiguration] = None,
 ):
-    """
-    Create custom plots with user-defined data
+    """Create a custom plot from user-defined data.
 
-    Args:
-        data_dict: Dictionary of {label: (x_data, y_data)} pairs
-        plot_type: Type of plot ("line", "scatter", "bar")
-        title: Plot title
-        xlabel: X-axis label
-        ylabel: Y-axis label
-        save_path: Path to save plot (optional)
-        show: Whether to display plot
-        config: Custom plotting configuration
+    Parameters
+    ----------
+    data_dict : dict of str to tuple of numpy.ndarray
+        Series label to ``(x_data, y_data)``.
+    plot_type : {"line", "scatter", "bar"}, default "line"
+        Type of plot.
+    title : str, default "Custom Plot"
+        Plot title.
+    xlabel : str, default "X"
+        X-axis label.
+    ylabel : str, default "Y"
+        Y-axis label.
+    save_path : str, optional
+        Path to save the plot.
+    show : bool, default True
+        Whether to display the plot; otherwise the figure is closed.
+    config : PlotConfiguration, optional
+        Custom plotting configuration (figure size and dpi).
 
-    Returns:
-        matplotlib Figure object
+    Returns
+    -------
+    matplotlib.figure.Figure
+        The figure.
+
+    Raises
+    ------
+    ValueError
+        If ``plot_type`` is not supported.
     """
     if config:
         plt.rcParams["figure.figsize"] = config.figsize
@@ -163,6 +200,60 @@ def create_custom_plot(
     return fig
 
 
+def benchmark_plotting_performance(sol, system, n_runs: int = 5) -> Dict[str, Dict]:
+    """Benchmark plotting performance.
+
+    Parameters
+    ----------
+    sol : scipy.integrate.OdeResult or SimulationResult
+        Solution to plot.
+    system : RLCircuitPID or CoupledRLCircuitsPID
+        Simulated circuit or coupled system.
+    n_runs : int, default 5
+        Number of timed runs, after one warm-up run.
+
+    Returns
+    -------
+    dict
+        ``"data_preparation"``, ``"plot_creation"`` and ``"total"``, each
+        mapping to ``{"mean", "std", "min", "max"}`` timings [s].
+    """
+    import time
+
+    manager = get_plotting_manager()
+    sol = as_solution(sol)
+    strategy = manager.strategies[manager.detect_strategy(sol, system)]
+
+    # Warm up
+    results = strategy.prepare_data(sol, system)
+    strategy.create_plots(results, system, show=False)
+
+    prep_times = []
+    plot_times = []
+    for _ in range(n_runs):
+        start = time.perf_counter()
+        results = strategy.prepare_data(sol, system)
+        prep_times.append(time.perf_counter() - start)
+
+        start = time.perf_counter()
+        strategy.create_plots(results, system, show=False)
+        plot_times.append(time.perf_counter() - start)
+
+    def _stats(times) -> Dict[str, float]:
+        return {
+            "mean": float(np.mean(times)),
+            "std": float(np.std(times)),
+            "min": float(np.min(times)),
+            "max": float(np.max(times)),
+        }
+
+    return {
+        "data_preparation": _stats(prep_times),
+        "plot_creation": _stats(plot_times),
+        "total": _stats(np.add(prep_times, plot_times)),
+    }
+
+
 # Export clean API functions only
 __all__ = [
     "get_plotting_manager",
@@ -170,6 +261,7 @@ __all__ = [
     "create_advanced_plots",
     "create_comparison_plots",
     "create_custom_plot",
+    "benchmark_plotting_performance",
 ]
 
 
