@@ -26,7 +26,8 @@ magnet-scipy --config-file CONFIG_FILE [OPTIONS]
 # Time control
 --time-start FLOAT          # Simulation start time (default: 0.0)
 --time-end FLOAT            # Simulation end time (default: 5.0) 
---time-step FLOAT           # Time step size (default: 0.001)
+--time-step FLOAT           # Maximum solver step, passed as max_step to solve_ivp (default: 0.001)
+                            # The solver is adaptive: actual steps may be smaller
 --method {RK45,RK23,DOP853,Radau,BDF,LSODA}  # ODE solver method
 
 # Initial conditions
