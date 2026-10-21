@@ -54,6 +54,14 @@ docs = [
     "myst-parser>=2.0",
     "sphinx-rtd-theme>=2.0",
 ]
+# Qt binding for the QtAgg matplotlib backend
+gui = [
+    "PySide6-Essentials>=6.5",
+]
+# tornado is required by the WebAgg matplotlib backend
+web = [
+    "tornado>=6.0",
+]
 
 [dependency-groups]
 # uv-native dev group (installed by default with `uv sync`)
@@ -74,10 +82,9 @@ magnet-scipy = "magnet_scipy.main_refactor:main"
 magnet-scipy-coupled = "magnet_scipy.coupled_main_refactor:main"
 
 [project.urls]
-Homepage = "https://github.com/magnetscipy/magnet_scipy"
-Repository = "https://github.com/magnetscipy/magnet_scipy.git"
+Homepage = "https://github.com/Trophime/magnet_scipy"
+Repository = "https://github.com/Trophime/magnet_scipy.git"
 Documentation = "https://magnet-scipy.readthedocs.io"
-"Bug Tracker" = "https://github.com/magnetscipy/magnet_scipy/issues"
 
 [tool.setuptools.packages.find]
 include = ["magnet_scipy*"]
