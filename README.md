@@ -50,7 +50,15 @@ pip install -e ".[dev]"
 ```
 
 ### Using uv
-[uv](https://docs.astral.sh/uv/) installs the package and the `dev` dependency group from the committed `uv.lock`:
+[uv](https://docs.astral.sh/uv/) installs the package and the `dev` dependency group from the committed `uv.lock`.
+
+Install uv once (user-level, no root required):
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh   # or: pipx install uv
+```
+
+There is no need to create a virtual environment by hand: `uv sync` creates
+`.venv/` in the project root and installs the package in editable mode:
 ```bash
 git clone https://github.com/Trophime/magnet_scipy.git
 cd magnet_scipy
@@ -58,6 +66,14 @@ uv sync                       # creates .venv with package + dev tools
 uv run magnet-scipy --help    # run CLI entry points
 uv run pytest                 # run the test suite
 ```
+Instead of prefixing commands with `uv run`, you can activate the environment:
+```bash
+source .venv/bin/activate
+magnet-scipy --help
+```
+If no Python ≥ 3.10 is available on the system, uv can download one:
+`uv sync --python 3.12`.
+
 After changing dependencies in `pyproject.toml`, run `uv lock` and commit the updated `uv.lock`.
 
 ### Optional JAX stack
@@ -66,6 +82,15 @@ tests marked `@pytest.mark.jax` (which are skipped when it is not installed):
 ```bash
 uv sync --extra jax        # or: pip install -e ".[jax]"
 ```
+
+### Optional plotting backends
+Interactive matplotlib windows need a GUI or web backend:
+```bash
+uv sync --extra gui        # PySide6 for the QtAgg backend   (or: pip install -e ".[gui]")
+uv sync --extra web        # tornado for the WebAgg backend  (or: pip install -e ".[web]")
+```
+Extras can be combined (`uv sync --extra gui --extra jax`, or `uv sync --all-extras`).
+Note that `uv sync` removes any extra not listed on the command line.
 
 ### Static Checks
 ```bash
@@ -79,6 +104,8 @@ uv run bandit -c pyproject.toml -r magnet_scipy   # security linting (config: [t
 - **Plotting**: Matplotlib (≥3.5.0), Seaborn (≥0.11.0)
 - **Development**: pytest, black, ruff, mypy, ty, bandit
 - **Optional** (`jax` extra): JAX, jaxlib, diffrax
+- **Optional** (`gui` extra): PySide6-Essentials (QtAgg backend)
+- **Optional** (`web` extra): tornado (WebAgg backend)
 
 ## Quick Start
 
