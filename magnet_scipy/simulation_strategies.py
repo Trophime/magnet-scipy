@@ -107,7 +107,9 @@ class VoltageInputStrategy(SimulationStrategy):
             time=sol.t,
             solution=sol.y,  # Transpose to match expected format
             metadata={
-                'n_evaluations': sol.nfev, 
+                'n_evaluations': sol.nfev,
+                'n_jacobian_evaluations': sol.njev,
+                'n_lu_decompositions': sol.nlu,
                 'state_size': len(sol.y),
                 'success': sol.success,
                 'message': sol.message
@@ -203,7 +205,9 @@ class PIDControlStrategy(SimulationStrategy):
             time=sol.t,
             solution=sol.y,  # Transpose to match expected format
             metadata={
-                'n_evaluations': sol.nfev, 
+                'n_evaluations': sol.nfev,
+                'n_jacobian_evaluations': sol.njev,
+                'n_lu_decompositions': sol.nlu,
                 'state_size': len(sol.y),
                 'success': sol.success,
                 'message': sol.message

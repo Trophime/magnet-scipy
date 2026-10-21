@@ -63,6 +63,8 @@ class SingleCircuitVoltageStrategy(VoltageInputStrategy):
                 "success": sol.success,
                 "message": sol.message,
                 "n_evaluations": sol.nfev,
+                "n_jacobian_evaluations": sol.njev,
+                "n_lu_decompositions": sol.nlu,
                 "state_size": len(y0),
                 "circuit_id": system.circuit_id
             },
@@ -132,6 +134,8 @@ class SingleCircuitPIDStrategy(PIDControlStrategy):
                 "success": sol.success,
                 "message": sol.message,
                 "n_evaluations": sol.nfev,
+                "n_jacobian_evaluations": sol.njev,
+                "n_lu_decompositions": sol.nlu,
                 "state_size": len(y0),
                 "circuit_id": system.circuit_id
             },
