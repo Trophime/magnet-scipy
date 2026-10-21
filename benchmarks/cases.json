@@ -1,0 +1,74 @@
+{
+  "M19_single_voltage": {
+    "wd": "examples/M19",
+    "config": "M9_M9Bitters_18MW.json",
+    "kind": "single",
+    "initial_values": [200.0],
+    "t_start": 0.0,
+    "t_end": 6000.0,
+    "max_step": 0.01
+  },
+  "M19_single_pid": {
+    "wd": "examples/M19",
+    "config": "M9_M9Bitters_18MW-pid.json",
+    "kind": "single",
+    "initial_values": [200.0],
+    "t_start": 0.0,
+    "t_end": 6000.0,
+    "max_step": 0.01
+  },
+  "M19_2circuits_voltage": {
+    "wd": "examples/M19",
+    "config": "2circuits.json",
+    "kind": "coupled",
+    "initial_values": [200.0, 200.0],
+    "t_start": 0.0,
+    "t_end": 6000.0,
+    "max_step": 0.01
+  },
+  "M19_2circuits_pid": {
+    "wd": "examples/M19",
+    "config": "2circuits-pid.json",
+    "kind": "coupled",
+    "initial_values": [200.0, 200.0],
+    "t_start": 0.0,
+    "t_end": 6000.0,
+    "max_step": 0.01
+  },
+  "M9_coupled_voltage": {
+    "wd": "examples/M9_M23072801",
+    "config": "circuits.json",
+    "kind": "coupled",
+    "initial_values": [-6.325936, 4.0380874],
+    "t_start": 5.0,
+    "t_end": 1136.0,
+    "max_step": 0.01
+  },
+  "M9_coupled_pid": {
+    "wd": "examples/M9_M23072801",
+    "config": "circuits-pid.json",
+    "kind": "coupled",
+    "initial_values": [-6.325936, 4.0380874],
+    "t_start": 5.0,
+    "t_end": 1200.0,
+    "max_step": 0.01
+  },
+  "M9_coupled_voltage_temp": {
+    "wd": "examples/M9_M23072801",
+    "config": "circuits-temp.json",
+    "kind": "coupled",
+    "initial_values": [-6.325936, 4.0380874],
+    "t_start": 5.0,
+    "t_end": 1136.0,
+    "max_step": 0.01
+  },
+  "M9_coupled_pid_temp": {
+    "wd": "examples/M9_M23072801",
+    "config": "circuits-pid-temp.json",
+    "kind": "coupled",
+    "initial_values": [-6.325936, 4.0380874],
+    "t_start": 5.0,
+    "t_end": 1200.0,
+    "max_step": 0.01
+  }
+}
