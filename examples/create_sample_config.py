@@ -1,5 +1,7 @@
-import numpy as np
 import json
+
+import numpy as np
+
 
 def create_sample_config(n_circuits: int = 3, filename: str = "sample_config.json"):
     """Create a sample configuration file"""
@@ -9,8 +11,8 @@ def create_sample_config(n_circuits: int = 3, filename: str = "sample_config.jso
     for i in range(n_circuits):
         circuit_config = {
             "circuit_id": f"circuit_{i+1}",
-            "R": 1.0 + 0.2 * i,
-            "L": 0.08 + 0.02 * i,
+            "resistance": 1.0 + 0.2 * i,
+            "inductance": 0.08 + 0.02 * i,
             "temperature": 25.0 + 5.0 * i,
             "reference_csv": f"sample_reference_circuit_{i+1}.csv",
             "resistance_csv": f"sample_resistance_circuit_{i+1}.csv",
@@ -30,10 +32,9 @@ def create_sample_config(n_circuits: int = 3, filename: str = "sample_config.jso
         }
         config["circuits"].append(circuit_config)
 
-    # Create mutual inductance matrix
+    # Create upper-triangle mutual inductances M[i, j] (i < j)
     coupling_strength = 0.02
-    mutual_inductances = np.full((n_circuits, n_circuits), coupling_strength)
-    np.fill_diagonal(mutual_inductances, 0.0)
+    mutual_inductances = np.full(n_circuits * (n_circuits - 1) // 2, coupling_strength)
     config["mutual_inductances"] = mutual_inductances.tolist()
 
     # Save configuration

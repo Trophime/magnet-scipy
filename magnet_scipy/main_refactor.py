@@ -7,27 +7,23 @@ Breaking changes: Removed legacy class imports, updated version number, simplifi
 """
 
 import sys
-from typing import Optional
 
 from .cli_core import (
-    ArgumentParser, 
-    ConfigurationLoader, 
-    WorkingDirectoryManager,
+    ArgumentParser,
+    ConfigurationLoader,
     SampleConfigGenerator,
     ValidationHelper,
-    create_time_parameters_from_args,
+    WorkingDirectoryManager,
     create_output_options_from_args,
     create_plotting_config_from_args,
+    create_time_parameters_from_args,
     handle_common_cli_tasks,
-    print_simulation_header
-)
-# Version 3.0: Only import essential classes - removed backward compatibility classes
-from .cli_simulation import (
-    SimulationOrchestrator,
-    SimulationSummary,
-    CLIErrorHandler
+    print_simulation_header,
 )
 from .cli_plotting_integration import EnhancedPlottingManager
+
+# Version 3.0: Only import essential classes - removed backward compatibility classes
+from .cli_simulation import CLIErrorHandler, SimulationOrchestrator, SimulationSummary
 
 
 def create_single_circuit_parser():
@@ -155,7 +151,7 @@ def run_single_circuit_workflow(args) -> int:
         # Version 3.0: Use only essential classes - SimulationOrchestrator
         orchestrator = SimulationOrchestrator()
         simulation_result = orchestrator.run_single_circuit_simulation(
-            circuit, time_params, args.strategy
+            circuit, time_params, args.strategy, initial_value=args.value_start
         )
         
         if not simulation_result.success:
@@ -196,7 +192,7 @@ def run_benchmark_workflow(circuit, time_params, output_options, plot_config, ar
         
         orchestrator = SimulationOrchestrator()
         simulation_result = orchestrator.run_single_circuit_simulation(
-            circuit, time_params, args.strategy
+            circuit, time_params, args.strategy, initial_value=args.value_start
         )
         
         if not simulation_result.success:
@@ -232,7 +228,7 @@ def run_comparison_workflow(circuit, time_params, output_options, plot_config, a
             
             orchestrator = SimulationOrchestrator()
             result = orchestrator.run_single_circuit_simulation(
-                circuit, time_params, strategy
+                circuit, time_params, strategy, initial_value=args.value_start
             )
             
             if result.success:
@@ -245,8 +241,9 @@ def run_comparison_workflow(circuit, time_params, output_options, plot_config, a
             return 1
         
         # Create comparison plots
-        plotting_manager = EnhancedPlottingManager(output_options, plot_config)
-        
+        # (constructed only for its side effect: sets matplotlib style defaults)
+        EnhancedPlottingManager(output_options, plot_config)
+
         # Convert results to format expected by comparison plotting
         solutions_and_systems = [(result, circuit) for result in results.values()]
         labels = list(results.keys())
@@ -284,7 +281,7 @@ def print_analytics_summary(analytics: dict, circuit):
         
         if 'experimental_comparison' in circuit_analytics:
             exp_comparison = circuit_analytics['experimental_comparison']
-            print(f"Experimental Data Comparison:")
+            print("Experimental Data Comparison:")
             for exp_name, comparison in exp_comparison.items():
                 print(f"  {exp_name}:")
                 for metric, value in comparison.items():

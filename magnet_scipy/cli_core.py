@@ -5,18 +5,18 @@ Enhanced CLI core components with plotting configuration support
 Integrates the new plotting system with existing CLI architecture
 """
 
-import os
-import sys
-import json
 import argparse
-import numpy as np
-from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple
+import json
+import os
+import warnings
 from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
-from .rlcircuitpid import RLCircuitPID
+import numpy as np
+
 from .pid_controller import create_adaptive_pid_controller
 from .plotting_strategies import PlotConfiguration
+from .rlcircuitpid import RLCircuitPID
 
 
 @dataclass
@@ -199,16 +199,44 @@ class ArgumentParser:
         )
 
 
+CIRCUIT_CONFIG_KEYS = {
+    "circuit_id",
+    "inductance",
+    "resistance",
+    "resistance_csv",
+    "temperature",
+    "temperature_csv",
+    "reference_csv",
+    "voltage_csv",
+    "pid_params",
+    "experiment_data",
+}
+
+
+def _warn_unknown_circuit_keys(config: Dict[str, Any]) -> None:
+    """Warn about circuit config keys the loader ignores."""
+    unknown = sorted(set(config) - CIRCUIT_CONFIG_KEYS)
+    if unknown:
+        warnings.warn(
+            f"Circuit '{config.get('circuit_id')}': ignoring unknown keys "
+            f"{', '.join(repr(k) for k in unknown)} "
+            f"(expected keys: {', '.join(sorted(CIRCUIT_CONFIG_KEYS))})",
+            UserWarning,
+            stacklevel=3,
+        )
+
+
 # Rest of the existing CLI core components...
 class ConfigurationLoader:
     """Load circuit configurations from JSON files"""
-    
+
     @staticmethod
     def load_single_circuit(config_file: str) -> RLCircuitPID:
         """Load single circuit configuration"""
         with open(config_file, 'r') as f:
             config = json.load(f)
-        
+            _warn_unknown_circuit_keys(config)
+
             # Create PID controller if parameters provided
             pid_controller = None
             if "pid_params" in config:
@@ -239,6 +267,8 @@ class ConfigurationLoader:
         
         circuits = []
         for config in config_data["circuits"]:
+            _warn_unknown_circuit_keys(config)
+
             # Create PID controller if parameters provided
             pid_controller = None
             if "pid_params" in config:
@@ -294,17 +324,15 @@ class SampleConfigGenerator:
     def create_single_circuit_config(filename: str = "single_circuit_config.json"):
         """Create a sample single circuit configuration"""
         config = {
-            "circuit": {
-                "circuit_id": "sample_circuit",
-                "L": 0.1,
-                "R": 1.0,
-                "temperature": 25.0,
-                "reference_csv": "reference_current.csv",
-                "pid": {
-                    "Kp": 10.0,
-                    "Ki": 0.5,
-                    "Kd": 0.01
-                }
+            "circuit_id": "sample_circuit",
+            "inductance": 0.1,
+            "resistance": 1.0,
+            "temperature": 25.0,
+            "reference_csv": "reference_current.csv",
+            "pid_params": {
+                "Kp_low": 10.0, "Ki_low": 0.5, "Kd_low": 0.01,
+                "Kp_medium": 10.0, "Ki_medium": 0.5, "Kd_medium": 0.01,
+                "Kp_high": 10.0, "Ki_high": 0.5, "Kd_high": 0.01
             }
         }
         
@@ -320,33 +348,31 @@ class SampleConfigGenerator:
             "circuits": [
                 {
                     "circuit_id": "circuit_1",
-                    "L": 0.1,
-                    "R": 1.0,
+                    "inductance": 0.1,
+                    "resistance": 1.0,
                     "temperature": 25.0,
                     "reference_csv": "reference_current_1.csv",
-                    "pid": {
-                        "Kp": 10.0,
-                        "Ki": 0.5,
-                        "Kd": 0.01
+                    "pid_params": {
+                        "Kp_low": 10.0, "Ki_low": 0.5, "Kd_low": 0.01,
+                        "Kp_medium": 10.0, "Ki_medium": 0.5, "Kd_medium": 0.01,
+                        "Kp_high": 10.0, "Ki_high": 0.5, "Kd_high": 0.01
                     }
                 },
                 {
                     "circuit_id": "circuit_2",
-                    "L": 0.15,
-                    "R": 1.2,
+                    "inductance": 0.15,
+                    "resistance": 1.2,
                     "temperature": 25.0,
                     "reference_csv": "reference_current_2.csv",
-                    "pid": {
-                        "Kp": 8.0,
-                        "Ki": 0.3,
-                        "Kd": 0.02
+                    "pid_params": {
+                        "Kp_low": 8.0, "Ki_low": 0.3, "Kd_low": 0.02,
+                        "Kp_medium": 8.0, "Ki_medium": 0.3, "Kd_medium": 0.02,
+                        "Kp_high": 8.0, "Ki_high": 0.3, "Kd_high": 0.02
                     }
                 }
             ],
-            "mutual_inductances": [
-                [0.1, 0.02],
-                [0.02, 0.15]
-            ]
+            # Upper-triangle mutual inductances M[i, j] (i < j) [H]
+            "mutual_inductances": [0.02]
         }
         
         with open(filename, 'w') as f:

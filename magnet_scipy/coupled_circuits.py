@@ -1,6 +1,6 @@
-import numpy as np
-from typing import List, Tuple, Optional, Union
+from typing import List, Optional, Tuple, Union
 
+import numpy as np
 
 from .rlcircuitpid import RLCircuitPID
 
@@ -25,16 +25,19 @@ class CoupledRLCircuitsPID:
         circuits : list of RLCircuitPID
             Circuits to couple; each must have a unique ``circuit_id``.
         mutual_inductances : numpy.ndarray, optional
-            The N(N-1)/2 off-diagonal mutual inductances M[i, j] [H], in
-            row-major upper-triangular order (``numpy.triu_indices(N, k=1)``).
-            The diagonal is filled with each circuit's self-inductance and the
-            matrix is symmetrized.
+            Either the N(N-1)/2 off-diagonal mutual inductances M[i, j] [H], in
+            row-major upper-triangular order (``numpy.triu_indices(N, k=1)``),
+            in which case the diagonal is filled with each circuit's
+            self-inductance and the matrix is symmetrized; or the full N x N
+            inductance matrix [H], whose diagonal must match the circuits'
+            self-inductances.
 
         Raises
         ------
         ValueError
-            If a circuit has no ``circuit_id``, IDs are duplicated, or
-            ``mutual_inductances`` has the wrong length.
+            If a circuit has no ``circuit_id``, IDs are duplicated,
+            ``mutual_inductances`` has the wrong shape, or a full matrix
+            diagonal does not match the circuits' self-inductances.
         RuntimeError
             If ``mutual_inductances`` is None.
         """
@@ -58,8 +61,21 @@ class CoupledRLCircuitsPID:
         np.fill_diagonal(self.M, L_values)
 
         if mutual_inductances is not None:
+            mutual_inductances = np.asarray(mutual_inductances, dtype=float)
             extra_diag_terms = int(self.n_circuits * (self.n_circuits - 1) / 2)
-            if extra_diag_terms != 0:
+            if mutual_inductances.ndim == 2:
+                # Full N x N inductance matrix
+                if mutual_inductances.shape != (self.n_circuits, self.n_circuits):
+                    raise ValueError(
+                        f"Inductance matrix must be {self.n_circuits}x{self.n_circuits}: shape={mutual_inductances.shape}"
+                    )
+                if not np.allclose(np.diag(mutual_inductances), L_values):
+                    raise ValueError(
+                        f"Inductance matrix diagonal {np.diag(mutual_inductances)} does not match circuit self-inductances {L_values}"
+                    )
+                self.M = mutual_inductances.copy()
+
+            elif extra_diag_terms != 0:
                 if mutual_inductances.shape[0] != (extra_diag_terms):
                     raise ValueError(
                         f"Mutual inductance matrix must be {extra_diag_terms}: shape={mutual_inductances.shape[0]}"

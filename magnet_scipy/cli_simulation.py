@@ -5,16 +5,16 @@ Version 3.0: Clean simulation orchestration components with backward compatibili
 Breaking changes: All legacy classes removed, only essential components remain
 """
 
-import numpy as np
-from typing import List, Tuple
+from typing import List
 
-from .cli_core import TimeParameters, OutputOptions, ValidationHelper
-from .simulation_types import SimulationResult, SimulationParameters
-from .simulation_strategies import SimulationRunner
-from .single_circuit_adapter import SingleCircuitSimulationRunner
-from .rlcircuitpid import RLCircuitPID
+import numpy as np
+
+from .cli_core import TimeParameters, ValidationHelper
 from .coupled_circuits import CoupledRLCircuitsPID
-from .cli_plotting_integration import EnhancedPlottingManager
+from .rlcircuitpid import RLCircuitPID
+from .simulation_strategies import SimulationRunner
+from .simulation_types import SimulationParameters, SimulationResult
+from .single_circuit_adapter import SingleCircuitSimulationRunner
 
 
 class SimulationOrchestrator:
@@ -31,10 +31,26 @@ class SimulationOrchestrator:
         self, 
         circuit: RLCircuitPID,
         time_params: TimeParameters,
-        strategy: str = "auto"
+        strategy: str = "auto",
+        initial_value: float = 0.0,
     ) -> SimulationResult:
-        """
-        Run single circuit simulation with proper error handling and validation
+        """Run single circuit simulation with error handling and validation.
+
+        Parameters
+        ----------
+        circuit : RLCircuitPID
+            Circuit to simulate.
+        time_params : TimeParameters
+            Start, end and maximum step of the simulation [s].
+        strategy : str, optional
+            ``"voltage"``, ``"pid"`` or ``"auto"`` (detected from the circuit).
+        initial_value : float, optional
+            Current at start time [A].
+
+        Returns
+        -------
+        SimulationResult
+            Simulation result; ``success`` is False if an exception occurred.
         """
         try:
             # Validate circuit
@@ -49,10 +65,10 @@ class SimulationOrchestrator:
                 t_end=adjusted_time_params.end,
                 dt=adjusted_time_params.step,
                 method=adjusted_time_params.method,
-                initial_values=[0.0]  # Default initial current
+                initial_values=[initial_value]
             )
             
-            print(f"Running single circuit simulation...")
+            print("Running single circuit simulation...")
             print(f"  Circuit: {circuit.circuit_id}")
             print(f"  Time span: {sim_params.t_start:.3f} to {sim_params.t_end:.3f} seconds")
             print(f"  Method: {sim_params.method}")
@@ -116,7 +132,7 @@ class SimulationOrchestrator:
                 initial_values=initial_values
             )
             
-            print(f"Running coupled circuits simulation...")
+            print("Running coupled circuits simulation...")
             print(f"  Circuits: {coupled_system.n_circuits}")
             print(f"  Time span: {sim_params.t_start:.3f} to {sim_params.t_end:.3f} seconds")
             print(f"  Method: {sim_params.method}")
@@ -179,7 +195,7 @@ class SimulationSummary:
         if result.success:
             print(f"Time points: {len(result.time)}")
             print(f"Final time: {result.time[-1]:.3f} s")
-            print(f"Final current: {result.solution[-1, 0]:.3f} A")
+            print(f"Final current: {result.solution[0, -1]:.3f} A")
         else:
             print(f"Error: {result.error_message}")
         
@@ -206,7 +222,7 @@ class SimulationSummary:
             
             # Print final currents for each circuit
             for i, circuit_id in enumerate(result.circuit_ids):
-                final_current = result.solution[-1, i * 2]  # Assuming current is first state variable
+                final_current = result.solution[i, -1]  # currents are the first n_circuits states
                 print(f"Final current [{circuit_id}]: {final_current:.3f} A")
         else:
             print(f"Error: {result.error_message}")
