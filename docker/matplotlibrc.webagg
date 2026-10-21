@@ -1,0 +1,5 @@
+# matplotlib settings for the webagg image (installed as /etc/matplotlibrc)
+backend: WebAgg
+webagg.address: 0.0.0.0
+webagg.port: 8988
+webagg.open_in_browser: False
