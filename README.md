@@ -279,8 +279,8 @@ Use `--list-strategies` to see detailed information about each strategy.
 ```json
 {
   "circuit_id": "test_motor",
-  "R": 1.0,
-  "L": 0.1,
+  "resistance": 1.0,
+  "inductance": 0.1,
   "temperature": 25.0,
   "reference_csv": "reference_current.csv",
   "resistance_csv": "resistance_data.csv",
@@ -298,8 +298,8 @@ Use `--list-strategies` to see detailed information about each strategy.
   "circuits": [
     {
       "circuit_id": "motor_1",
-      "R": 1.0,
-      "L": 0.08,
+      "resistance": 1.0,
+      "inductance": 0.08,
       "temperature": 25.0,
       "reference_csv": "motor1_reference.csv",
       "resistance_csv": "motor1_resistance.csv",
@@ -311,15 +311,22 @@ Use `--list-strategies` to see detailed information about each strategy.
     },
     {
       "circuit_id": "motor_2", 
-      "R": 1.2,
-      "L": 0.09,
+      "resistance": 1.2,
+      "inductance": 0.09,
       "temperature": 30.0,
       "reference_csv": "motor2_reference.csv"
     }
   ],
-  "mutual_inductances": [0.09]
+  "mutual_inductances": [0.02]
 }
 ```
+
+`mutual_inductances` lists the N(N-1)/2 off-diagonal terms `M[i, j]` (H) for
+`i < j`, in row-major order: `[M01, M02, …, M0(N-1), M12, …]`. The diagonal is
+taken from each circuit's `inductance`. A full symmetric N×N matrix is also
+accepted, provided its diagonal matches the circuits' `inductance` values. The
+resulting matrix must be positive definite (for two circuits:
+`M01² < L0·L1`).
 
 ### Working Directory
 
@@ -398,7 +405,7 @@ Container for multiple magnetically coupled RL circuits.
 
 **Parameters:**
 - `circuits`: List of RLCircuitPID instances
-- `mutual_inductances`: Nx(N+1)/2 -N mutual inductances as an array
+- `mutual_inductances`: the N(N-1)/2 upper-triangle mutual inductances (H) as an array, in `numpy.triu_indices(N, k=1)` order, or the full N×N inductance matrix
 
 #### `PIDController`
 Flexible adaptive PID controller with region-based parameters.
