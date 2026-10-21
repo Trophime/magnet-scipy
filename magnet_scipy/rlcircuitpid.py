@@ -1,14 +1,16 @@
 import sys
+from typing import Any, Callable, Dict, List, Optional, Tuple
+
 import numpy as np
-from typing import Any, Callable, Tuple, List, Dict, Optional
+
+from .csv_utils import (
+    create_2d_function_from_csv,
+    create_function_from_csv,
+    create_piecewise_linear_derivative,
+)
 
 # Import the new PID controller and CSV utilities
 from .pid_controller import PIDController, create_adaptive_pid_controller
-from .csv_utils import (
-    create_function_from_csv,
-    create_2d_function_from_csv,
-    create_piecewise_linear_derivative,
-)
 
 
 class RLCircuitPID:

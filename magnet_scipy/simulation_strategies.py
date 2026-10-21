@@ -5,12 +5,13 @@ Breaking change: Local SimulationResult class removed, imports enhanced version
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, List, Tuple, Any, Optional
+from typing import Dict, List, Optional
+
 import numpy as np
 from scipy.integrate import solve_ivp
 
 # Version 3.0: Import unified SimulationResult from cli_simulation
-from .simulation_types import SimulationResult, SimulationParameters
+from .simulation_types import SimulationParameters, SimulationResult
 
 
 class SimulationStrategy(ABC):

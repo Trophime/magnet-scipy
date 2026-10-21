@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 
+
 def create_sample_coupled_data(n_circuits: int = 3):
     """Create sample CSV files for testing coupled circuits"""
 

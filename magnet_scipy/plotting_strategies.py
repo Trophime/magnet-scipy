@@ -7,14 +7,14 @@ Eliminates mode-switching complexity in plotting functions
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple, Optional, Any
-import numpy as np
+from typing import Any, Dict, List, Optional, Tuple
+
 import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 
 from .utils import exp_metrics
-from scipy import stats
 
 
 @dataclass

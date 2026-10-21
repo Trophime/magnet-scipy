@@ -5,17 +5,15 @@ Integration layer between refactored CLI components and plotting system
 Updates the CLI simulation components to use the new plotting architecture
 """
 
-from typing import Dict, Tuple, Any, Optional
-import numpy as np
+from typing import Dict, Optional, Tuple
 
+from .cli_core import OutputOptions
 from .plotting_core import (
     PlottingManager,
-    PlottingAnalytics,
     ResultsFileManager,
     SimulationResultSolution,
 )
 from .plotting_strategies import PlotConfiguration, ProcessedResults
-from .cli_core import OutputOptions
 
 
 class EnhancedPlottingManager(PlottingManager):

@@ -4,11 +4,15 @@ Version 3.0: Fixed import conflicts - uses unified SimulationResult from cli_sim
 Breaking change: Imports enhanced SimulationResult instead of conflicting local version
 """
 
-import numpy as np
 from typing import List, Optional
-from .simulation_strategies import VoltageInputStrategy, PIDControlStrategy
+
+import numpy as np
+
+from .simulation_strategies import PIDControlStrategy, VoltageInputStrategy
+
 # Version 3.0: Import enhanced SimulationResult from cli_simulation to avoid conflicts
-from .simulation_types import SimulationResult, SimulationParameters
+from .simulation_types import SimulationParameters, SimulationResult
+
 
 class SingleCircuitVoltageStrategy(VoltageInputStrategy):
     """

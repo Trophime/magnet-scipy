@@ -7,27 +7,24 @@ Breaking changes: Removed legacy class imports, updated version number, simplifi
 """
 
 import sys
-from typing import Optional, List
+from typing import List
 
 from .cli_core import (
-    ArgumentParser, 
-    ConfigurationLoader, 
-    WorkingDirectoryManager,
+    ArgumentParser,
+    ConfigurationLoader,
     SampleConfigGenerator,
     ValidationHelper,
-    create_time_parameters_from_args,
+    WorkingDirectoryManager,
     create_output_options_from_args,
     create_plotting_config_from_args,
+    create_time_parameters_from_args,
     handle_common_cli_tasks,
-    print_simulation_header
-)
-# Version 3.0: Only import essential classes - removed backward compatibility classes
-from .cli_simulation import (
-    SimulationOrchestrator,
-    SimulationSummary,
-    CLIErrorHandler
+    print_simulation_header,
 )
 from .cli_plotting_integration import EnhancedPlottingManager
+
+# Version 3.0: Only import essential classes - removed backward compatibility classes
+from .cli_simulation import CLIErrorHandler, SimulationOrchestrator, SimulationSummary
 from .coupled_circuits import CoupledRLCircuitsPID
 
 
@@ -76,7 +73,6 @@ def create_coupled_circuits_parser():
 
 def handle_strategy_listing():
     """Handle --list-strategies command"""
-    from .simulation_strategies import SimulationRunner
     
     print("Available simulation strategies for coupled circuits:")
     print("  voltage: Voltage-driven simulation using regular ODE")
@@ -263,8 +259,9 @@ def run_comparison_workflow(coupled_system, time_params, output_options, plot_co
             return 1
         
         # Create comparison plots
-        plotting_manager = EnhancedPlottingManager(output_options, plot_config)
-        
+        # (constructed only for its side effect: sets matplotlib style defaults)
+        EnhancedPlottingManager(output_options, plot_config)
+
         # Convert results to format expected by comparison plotting
         solutions_and_systems = [(result, coupled_system) for result in results.values()]
         labels = list(results.keys())
@@ -304,7 +301,7 @@ def print_analytics_summary(analytics: dict, coupled_system):
             
             if 'experimental_comparison' in circuit_analytics:
                 exp_comparison = circuit_analytics['experimental_comparison']
-                print(f"  Experimental Data Comparison:")
+                print("  Experimental Data Comparison:")
                 for exp_name, comparison in exp_comparison.items():
                     for metric, value in comparison.items():
                         print(f"    {exp_name} {metric}: {value}")
@@ -323,21 +320,21 @@ def print_coupling_analysis(coupling_analysis: dict):
     # Mutual inductance effects
     if 'mutual_inductance_effects' in coupling_analysis:
         effects = coupling_analysis['mutual_inductance_effects']
-        print(f"  Mutual Inductance Effects:")
+        print("  Mutual Inductance Effects:")
         for effect in effects:
             print(f"    - {effect}")
     
     # Cross-coupling metrics
     if 'cross_coupling' in coupling_analysis:
         cross_coupling = coupling_analysis['cross_coupling']
-        print(f"  Cross-Coupling Metrics:")
+        print("  Cross-Coupling Metrics:")
         print(f"    - Maximum coupling strength: {cross_coupling.get('max_coupling', 'N/A'):.3f}")
         print(f"    - Average coupling: {cross_coupling.get('avg_coupling', 'N/A'):.3f}")
     
     # Stability analysis
     if 'stability' in coupling_analysis:
         stability = coupling_analysis['stability']
-        print(f"  System Stability:")
+        print("  System Stability:")
         print(f"    - System stable: {stability.get('is_stable', 'Unknown')}")
         print(f"    - Dominant pole: {stability.get('dominant_pole', 'N/A')}")
     

@@ -5,9 +5,10 @@ Version 3.0: Shared data structures and types to avoid circular imports
 Breaking change: SimulationResult moved here from cli_simulation to resolve circular dependencies
 """
 
-import numpy as np
-from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
+
+import numpy as np
 
 
 @dataclass

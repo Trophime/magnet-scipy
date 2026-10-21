@@ -1,11 +1,13 @@
+from typing import Dict, List
+
 import numpy as np
+
+from magnet_scipy.coupled_circuits import CoupledRLCircuitsPID
 
 # Import here to avoid circular imports
 from magnet_scipy.pid_controller import create_adaptive_pid_controller
 from magnet_scipy.rlcircuitpid import RLCircuitPID
-from magnet_scipy.coupled_circuits import CoupledRLCircuitsPID
 
-from typing import List, Tuple, Dict
 
 def create_example_coupled_circuits(
     n_circuits: int = 3, coupling_strength: float = 0.05

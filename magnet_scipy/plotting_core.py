@@ -5,13 +5,12 @@ Core plotting components, utilities, and analytics
 Shared functionality between different plotting strategies
 """
 
-import numpy as np
-import matplotlib.pyplot as plt
-from typing import Dict, List, Tuple, Optional, Any
-from scipy import stats
-from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple
 
-from .plotting_strategies import ProcessedResults, PlotConfiguration
+import matplotlib.pyplot as plt
+import numpy as np
+
+from .plotting_strategies import PlotConfiguration, ProcessedResults
 from .utils import exp_metrics
 
 
@@ -169,20 +168,20 @@ class PlottingAnalytics:
             
             # Current statistics
             current_stats = circuit_analytics['current_stats']
-            print(f"  Current:")
+            print("  Current:")
             print(f"    RMS: {current_stats['rms']:.3f} A")
             print(f"    Range: {current_stats['min']:.3f} to {current_stats['max']:.3f} A")
             print(f"    Std Dev: {current_stats['std']:.3f} A")
             
             # Voltage statistics
             voltage_stats = circuit_analytics['voltage_stats']
-            print(f"  Voltage:")
+            print("  Voltage:")
             print(f"    RMS: {voltage_stats['rms']:.3f} V")
             print(f"    Range: {voltage_stats['min']:.3f} to {voltage_stats['max']:.3f} V")
             
             # Power statistics
             power_stats = circuit_analytics['power_stats']
-            print(f"  Power:")
+            print("  Power:")
             print(f"    Average: {power_stats['mean']:.3f} W")
             print(f"    Peak: {power_stats['max']:.3f} W")
             print(f"    Total Energy (approx): {power_stats['mean'] * 1:.3f} J")  # Assuming 1s simulation
@@ -190,20 +189,20 @@ class PlottingAnalytics:
             # PID-specific analytics
             if 'tracking_metrics' in circuit_analytics:
                 tracking = circuit_analytics['tracking_metrics']
-                print(f"  Tracking Performance:")
+                print("  Tracking Performance:")
                 print(f"    RMS Error: {tracking['rmse']:.4f} A")
                 print(f"    Max Error: {tracking['max_error']:.4f} A")
                 print(f"    Mean Absolute Error: {tracking['mae']:.4f} A")
                 
                 if 'region_usage' in circuit_analytics:
-                    print(f"  PID Region Usage:")
+                    print("  PID Region Usage:")
                     for region, percentage in circuit_analytics['region_usage'].items():
                         print(f"    {region}: {percentage:.1f}%")
             
             # Experimental comparison
             if 'experimental_comparison' in circuit_analytics:
                 exp_comp = circuit_analytics['experimental_comparison']
-                print(f"  Experimental Data Comparison:")
+                print("  Experimental Data Comparison:")
                 for data_type, metrics in exp_comp.items():
                     print(f"    {data_type.title()}:")
                     print(f"      RMS Difference: {metrics['rms_difference']:.4f}")
@@ -236,7 +235,10 @@ class PlottingManager:
         PlottingStyleManager.setup_matplotlib_defaults()
         
         # Initialize strategies
-        from .plotting_strategies import VoltageInputPlottingStrategy, PIDControlPlottingStrategy
+        from .plotting_strategies import (
+            PIDControlPlottingStrategy,
+            VoltageInputPlottingStrategy,
+        )
         self.strategies = {
             "voltage_input": VoltageInputPlottingStrategy(self.config),
             "pid_control": PIDControlPlottingStrategy(self.config)
@@ -329,7 +331,7 @@ class PlottingManager:
         results = strategy.prepare_data(sol, system)
 
         # Create plots
-        fig = strategy.create_plots(results, system, save_path, show)
+        strategy.create_plots(results, system, save_path, show)
 
         # Generate analytics
         analytics = PlottingAnalytics.analyze_circuit_performance(results)

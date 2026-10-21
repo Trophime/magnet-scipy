@@ -5,11 +5,12 @@ Refactored coupled circuits plotting module using strategy pattern
 Maintains backward compatibility while eliminating complex mode switching
 """
 
-import numpy as np
-import matplotlib.pyplot as plt
-from typing import Dict, Tuple, List, Optional
+from typing import Dict, List, Optional, Tuple
 
-from .plotting_core import PlottingManager, PlottingAnalytics, ResultsFileManager
+import matplotlib.pyplot as plt
+import numpy as np
+
+from .plotting_core import PlottingAnalytics, PlottingManager, ResultsFileManager
 from .plotting_strategies import ProcessedResults
 
 

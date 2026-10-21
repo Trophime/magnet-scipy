@@ -29,7 +29,7 @@ import numpy as np
 import pandas as pd
 from scipy.integrate import trapezoid
 
-from magnet_scipy import RLCircuitPID, PIDController, create_adaptive_pid_controller
+from magnet_scipy import PIDController, RLCircuitPID, create_adaptive_pid_controller
 from magnet_scipy.coupled_circuits import CoupledRLCircuitsPID
 from magnet_scipy.coupled_plotting import (
     analyze_coupling_effects,

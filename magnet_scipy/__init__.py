@@ -32,22 +32,21 @@ __author__ = "MagnetDB Team"
 __email__ = "team@magnetScipy.com"
 
 # Core classes and functions
-from .rlcircuitpid import RLCircuitPID
+from .csv_utils import (
+    create_2d_function_from_csv,
+    create_function_from_csv,
+    create_multi_column_function_from_csv,
+    create_parametric_function_from_csv,
+)
 from .pid_controller import (
     PIDController,
     PIDParams,
     RegionConfig,
-    create_default_pid_controller,
     create_adaptive_pid_controller,
     create_custom_pid_controller,
+    create_default_pid_controller,
 )
-from .csv_utils import (
-    create_function_from_csv,
-    create_2d_function_from_csv,
-    create_multi_column_function_from_csv,
-    create_parametric_function_from_csv,
-)
-
+from .rlcircuitpid import RLCircuitPID
 
 # Define what gets imported with "from magnet_Scipy import *"
 __all__ = [

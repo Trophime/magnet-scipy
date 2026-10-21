@@ -5,9 +5,10 @@ Version 3.0: Clean plotting module with backward compatibility functions removed
 Breaking changes: All legacy wrapper functions removed, only new system functions remain
 """
 
-import numpy as np
+from typing import Dict, Optional, Tuple
+
 import matplotlib.pyplot as plt
-from typing import Dict, Tuple, Optional
+import numpy as np
 
 from .plotting_core import PlottingManager, as_solution
 from .plotting_strategies import PlotConfiguration
