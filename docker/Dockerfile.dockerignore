@@ -4,5 +4,6 @@
 !uv.lock
 !README.md
 !magnet_scipy/
+!docker/matplotlibrc.webagg
 magnet_scipy/**/__pycache__
 magnet_scipy/**/*.old*
