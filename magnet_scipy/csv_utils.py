@@ -1,7 +1,46 @@
-import pandas as pd
+from pathlib import Path
+from typing import Callable, List, Tuple
+
 import numpy as np
+import pandas as pd
 from scipy.interpolate import interp1d
-from typing import Tuple, Callable, List
+
+INTERP1D_KINDS = (
+    "linear",
+    "nearest",
+    "nearest-up",
+    "zero",
+    "slinear",
+    "quadratic",
+    "cubic",
+    "previous",
+    "next",
+)
+
+
+def _read_csv(csv_file_path: str) -> pd.DataFrame:
+    """Read a CSV file with auto-detected separator, checking first that it exists and is not empty."""
+    path = Path(csv_file_path)
+    if not path.is_file():
+        raise FileNotFoundError(f"CSV file not found: {csv_file_path}")
+    with path.open() as f:
+        if not any(line.strip() for line in f):
+            raise ValueError(f"CSV file is empty: {csv_file_path}")
+    return pd.read_csv(path, sep=None, engine="python")
+
+
+def _make_interp1d(x_data: np.ndarray, y_data: np.ndarray, method: str) -> interp1d:
+    """Build an interp1d along axis 0 that holds the edge values outside the x range."""
+    if method not in INTERP1D_KINDS:
+        raise ValueError(f"Unknown method: {method}. Use one of {INTERP1D_KINDS}")
+    return interp1d(
+        x_data,
+        y_data,
+        kind=method,
+        axis=0,
+        bounds_error=False,
+        fill_value=(y_data[0], y_data[-1]),
+    )
 
 
 def create_function_from_csv(
@@ -19,26 +58,35 @@ def create_function_from_csv(
         Name of the dependent variable column.
     method : str, default "linear"
         Interpolation kind passed to :class:`scipy.interpolate.interp1d`
-        (e.g. ``"linear"``, ``"nearest"``, ``"cubic"``).
+        (one of :data:`INTERP1D_KINDS`, e.g. ``"linear"``, ``"nearest"``,
+        ``"cubic"``).
 
     Returns
     -------
     function : scipy.interpolate.interp1d
-        Interpolant y = f(x).
+        Interpolant y = f(x). Outside the x range it holds the first/last
+        y value (no extrapolation).
     x_data : numpy.ndarray
         x values, sorted ascending.
     y_data : numpy.ndarray
         Corresponding y values.
+
+    Raises
+    ------
+    FileNotFoundError
+        If ``csv_file_path`` does not exist.
+    ValueError
+        If ``method`` is not a supported kind or the file is empty.
     """
     # Load CSV data
-    df = pd.read_csv(csv_file_path, sep=None, engine="python")
-    
+    df = _read_csv(csv_file_path)
+
     # Extract and sort data by x values
     df_sorted = df.sort_values(x_column)
     x_data = df_sorted[x_column].values
     y_data = df_sorted[y_column].values
 
-    scipy_interp = interp1d(x_data, y_data, kind=method)
+    scipy_interp = _make_interp1d(x_data, y_data, method)
 
     return scipy_interp, x_data, y_data
 
@@ -123,12 +171,14 @@ def create_2d_function_from_csv(
 
     Raises
     ------
+    FileNotFoundError
+        If ``csv_file_path`` does not exist.
     ValueError
-        If ``method`` is not ``"linear"`` or ``"nearest"``.
+        If ``method`` is not ``"linear"`` or ``"nearest"``, or the file is empty.
     """
 
     # Load CSV data
-    df = pd.read_csv(csv_file_path, sep=None, engine="python")
+    df = _read_csv(csv_file_path)
 
     # Extract data
     x_data = df[x_column].values
@@ -249,22 +299,30 @@ def create_multi_column_function_from_csv(
     y_columns : list of str
         Names of the dependent variable columns.
     method : str, default "linear"
-        Interpolation kind passed to :class:`scipy.interpolate.interp1d`.
+        Interpolation kind passed to :class:`scipy.interpolate.interp1d`
+        (one of :data:`INTERP1D_KINDS`).
 
     Returns
     -------
     function : callable
-        ``function(x)`` returning a list with one
-        :class:`scipy.interpolate.interp1d` per column of ``y_columns``.
-        The argument ``x`` is currently ignored.
+        ``function(x)`` returning a :class:`~numpy.ndarray` of the
+        interpolated values, shape ``(len(y_columns),)`` for scalar ``x``.
+        Outside the x range it holds the first/last row (no extrapolation).
     x_data : numpy.ndarray
         x values, sorted ascending.
     y_data : numpy.ndarray
         y values, shape ``(n_points, len(y_columns))``.
+
+    Raises
+    ------
+    FileNotFoundError
+        If ``csv_file_path`` does not exist.
+    ValueError
+        If ``method`` is not a supported kind or the file is empty.
     """
 
     # Load CSV data
-    df = pd.read_csv(csv_file_path, sep=None, engine="python")
+    df = _read_csv(csv_file_path)
 
     # Extract and sort data by x values
     df_sorted = df.sort_values(x_column)
@@ -276,13 +334,7 @@ def create_multi_column_function_from_csv(
         y_data_list.append(df_sorted[col].values)
     y_data = np.array(y_data_list).T  # Shape: (n_points, n_outputs)
 
-    def scipy_function_multi(x):
-        """Multi-output linear interpolation function"""
-        # Vectorize interpolation across all columns
-        results = []
-        for i in range(len(y_columns)):
-            results.append(interp1d(x_data, y_data[:, i], kind=method))
-        return results
+    scipy_function_multi = _make_interp1d(x_data, y_data, method)
 
     return scipy_function_multi, x_data, y_data
 
@@ -323,12 +375,14 @@ def create_parametric_function_from_csv(
 
     Raises
     ------
+    FileNotFoundError
+        If ``csv_file_path`` does not exist.
     ValueError
-        If ``method`` is not ``"linear"`` or ``"nearest"``.
+        If ``method`` is not ``"linear"`` or ``"nearest"``, or the file is empty.
     """
 
     # Load CSV data
-    df = pd.read_csv(csv_file_path, sep=None, engine="python")
+    df = _read_csv(csv_file_path)
 
     # Extract data
     param_data = df[param_column].values

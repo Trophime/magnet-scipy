@@ -2,44 +2,46 @@
 Tests for Scipy CSV utilities functionality.
 """
 
-import pytest
-import numpy as np
-import pandas as pd
-import tempfile
 from pathlib import Path
 
+import numpy as np
+import pandas as pd
+import pytest
+
 from magnet_scipy.csv_utils import (
-    create_function_from_csv,
     create_2d_function_from_csv,
+    create_function_from_csv,
     create_multi_column_function_from_csv,
     create_parametric_function_from_csv,
 )
 
 
+@pytest.fixture
+def simple_csv_data(test_data_dir):
+    """Create simple CSV data for testing."""
+    x = np.linspace(0, 10, 21)
+    y = 2 * x + 3  # Linear function
+
+    df = pd.DataFrame({"x_values": x, "y_values": y})
+    csv_path = test_data_dir / "simple_data.csv"
+    df.to_csv(csv_path, index=False)
+    return str(csv_path)
+
+
+@pytest.fixture
+def nonlinear_csv_data(test_data_dir):
+    """Create nonlinear CSV data for testing."""
+    x = np.linspace(0, 2 * np.pi, 50)
+    y = np.sin(x) + 0.5 * np.cos(2 * x)  # Nonlinear function
+
+    df = pd.DataFrame({"time": x, "signal": y})
+    csv_path = test_data_dir / "nonlinear_data.csv"
+    df.to_csv(csv_path, index=False)
+    return str(csv_path)
+
+
 class TestCreateFunctionFromCSV:
     """Test 1D Scipy function creation from CSV."""
-
-    @pytest.fixture
-    def simple_csv_data(self, test_data_dir):
-        """Create simple CSV data for testing."""
-        x = np.linspace(0, 10, 21)
-        y = 2 * x + 3  # Linear function
-
-        df = pd.DataFrame({"x_values": x, "y_values": y})
-        csv_path = test_data_dir / "simple_data.csv"
-        df.to_csv(csv_path, index=False)
-        return str(csv_path)
-
-    @pytest.fixture
-    def nonlinear_csv_data(self, test_data_dir):
-        """Create nonlinear CSV data for testing."""
-        x = np.linspace(0, 2 * np.pi, 50)
-        y = np.sin(x) + 0.5 * np.cos(2 * x)  # Nonlinear function
-
-        df = pd.DataFrame({"time": x, "signal": y})
-        csv_path = test_data_dir / "nonlinear_data.csv"
-        df.to_csv(csv_path, index=False)
-        return str(csv_path)
 
     def test_linear_interpolation(self, simple_csv_data):
         """Test linear interpolation functionality."""
@@ -98,7 +100,6 @@ class TestCreateFunctionFromCSV:
 
     def test_Scipy_compatibility(self, nonlinear_csv_data):
         """Test Scipy JIT compilation compatibility."""
-        import scipy
 
         scipy_func, _, _ = create_function_from_csv(
             nonlinear_csv_data, "time", "signal", method="linear"
@@ -186,7 +187,6 @@ class TestCreate2DScipyFunctionFromCSV:
 
     def test_2d_Scipy_compatibility(self, grid_csv_data):
         """Test 2D function Scipy compatibility."""
-        import scipy
 
         scipy_func_2d, _, _, _ = create_2d_function_from_csv(
             grid_csv_data, "x_coord", "y_coord", "z_value", method="linear"
@@ -247,7 +247,6 @@ class TestCreateMultiColumnScipyFunction:
 
     def test_multi_column_Scipy_compatibility(self, multi_output_csv_data):
         """Test multi-column Scipy compatibility."""
-        import scipy
 
         scipy_func_multi, _, _ = create_multi_column_function_from_csv(
             multi_output_csv_data,
@@ -324,7 +323,6 @@ class TestCreateParametricScipyFunction:
 
     def test_parametric_Scipy_compatibility(self, parametric_csv_data):
         """Test parametric function Scipy compatibility."""
-        import scipy
 
         scipy_func_param, _, _, _ = create_parametric_function_from_csv(
             parametric_csv_data, "parameter", "x_input", "y_output", method="linear"
@@ -358,6 +356,31 @@ class TestCSVUtilsEdgeCases:
 
         with pytest.raises((ValueError, KeyError, IndexError)):
             create_function_from_csv(str(csv_path), "x", "y", method="linear")
+
+    def test_zero_byte_csv_file(self, test_data_dir):
+        """Test that a zero-byte CSV file is reported as empty."""
+        csv_path = test_data_dir / "zero_byte.csv"
+        csv_path.touch()
+
+        with pytest.raises(ValueError, match="empty"):
+            create_function_from_csv(str(csv_path), "x", "y", method="linear")
+
+    def test_empty_csv_file_all_loaders(self, test_data_dir):
+        """Test that 2D and parametric loaders also reject empty CSV files."""
+        csv_path = test_data_dir / "empty_all.csv"
+        csv_path.write_text("\n\n")
+
+        with pytest.raises(ValueError, match="empty"):
+            create_2d_function_from_csv(str(csv_path), "x", "y", "z")
+        with pytest.raises(ValueError, match="empty"):
+            create_parametric_function_from_csv(str(csv_path), "p", "x", "y")
+
+    def test_nonexistent_file_all_loaders(self):
+        """Test that 2D and parametric loaders raise FileNotFoundError."""
+        with pytest.raises(FileNotFoundError):
+            create_2d_function_from_csv("nonexistent_file.csv", "x", "y", "z")
+        with pytest.raises(FileNotFoundError):
+            create_parametric_function_from_csv("nonexistent_file.csv", "p", "x", "y")
 
     def test_single_point_csv(self, test_data_dir):
         """Test handling of CSV with single data point."""
@@ -704,14 +727,16 @@ class TestCSVUtilsComplexScenarios:
 
         data = []
         for T in temperatures:
-            for I in currents:
+            for current in currents:
                 # Realistic resistance model
                 R0 = 1.2
                 alpha = 0.004  # Temperature coefficient
                 beta = 0.0001  # Current coefficient
-                R = R0 * (1 + alpha * (T - 25) + beta * I)
+                R = R0 * (1 + alpha * (T - 25) + beta * current)
 
-                data.append({"current_A": I, "temperature_C": T, "resistance_ohm": R})
+                data.append(
+                    {"current_A": current, "temperature_C": T, "resistance_ohm": R}
+                )
 
         df = pd.DataFrame(data)
         csv_path = test_data_dir / "resistance_model.csv"

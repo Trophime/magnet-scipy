@@ -1,6 +1,6 @@
-import pytest
 import numpy as np
 import pandas as pd
+import pytest
 
 from magnet_scipy.csv_utils import (
     create_function_from_csv,

@@ -2,11 +2,12 @@
 Test configuration and fixtures for magnet_diffrax package tests.
 """
 
-import pytest
-import numpy as np
-import pandas as pd
 import tempfile
 from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import pytest
 
 # Import package modules for testing
 from magnet_scipy import (
