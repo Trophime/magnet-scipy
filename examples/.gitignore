@@ -1,5 +1,6 @@
 *.txt
 *.tdms
 *.csv
+!M9_M23072801/summary.csv
 *.png
 *.xml
