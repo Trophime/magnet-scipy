@@ -367,6 +367,7 @@ class PIDControlPlottingStrategy(PlottingStrategy):
     def prepare_data(self, sol, system, **kwargs) -> ProcessedResults:
         """Prepare PID simulation data for plotting"""
         t = sol.t
+        derivative_errors = self._derivative_errors(sol, system)
 
         # Determine if single or coupled system
         if hasattr(system, 'circuits'):
@@ -374,24 +375,28 @@ class PIDControlPlottingStrategy(PlottingStrategy):
             n_circuits = system.n_circuits
             currents = sol.y[:n_circuits, :]
             integral_errors = sol.y[n_circuits:, :]
-            
+
             circuits_data = {}
             for i, circuit in enumerate(system.circuits):
                 circuit_id = circuit.circuit_id
                 current = currents[i]
                 integral_error = integral_errors[i]
-                
+
                 # Process PID data
-                pid_data = self._process_pid_data(circuit, t, current, integral_error)
-                
+                pid_data = self._process_pid_data(
+                    circuit, t, current, integral_error, derivative_errors[i]
+                )
+
                 circuits_data[circuit_id] = pid_data
         else:
             # Single circuit
             current = sol.y[0]
             integral_error = sol.y[1]
             print(f'single circuit: current={current.shape}, integral_error={integral_error.shape}')
-            
-            pid_data = self._process_pid_data(system, t, current, integral_error)
+
+            pid_data = self._process_pid_data(
+                system, t, current, integral_error, derivative_errors[0]
+            )
             circuits_data = {system.circuit_id: pid_data}
         
         return ProcessedResults(
@@ -400,9 +405,26 @@ class PIDControlPlottingStrategy(PlottingStrategy):
             strategy_type="pid_control",
             metadata={"sol_info": {"success": getattr(sol, 'success', True)}}
         )
-    
-    def _process_pid_data(self, circuit, t, current, integral_error):
-        """Process PID-specific data for a circuit"""
+
+    def _derivative_errors(self, sol, system) -> np.ndarray:
+        """Exact de/dt = di_ref/dt - di/dt [A/s] at each output time, shape (n_circuits, n_t)."""
+        if hasattr(system, 'circuits'):
+            n_circuits = system.n_circuits
+            def reference_derivatives(t):
+                return np.array(system.get_reference_current_derivatives(t))
+        else:
+            n_circuits = 1
+            reference_derivatives = system.reference_current_derivative
+
+        rows = []
+        for t_k, y_k in zip(sol.t, sol.y.T):
+            di_ref_dt = reference_derivatives(t_k)
+            di_dt = system.vector_field(t_k, y_k, di_ref_dt=di_ref_dt)[:n_circuits]
+            rows.append(di_ref_dt - di_dt)
+        return np.array(rows).reshape(len(sol.t), n_circuits).T
+
+    def _process_pid_data(self, circuit, t, current, integral_error, derivative_error):
+        """Process PID-specific data for a circuit, given its exact de/dt [A/s]."""
         # Load experimental data
         circuit._load_experimental_data()
         
@@ -427,9 +449,7 @@ class PIDControlPlottingStrategy(PlottingStrategy):
         
         # Calculate control signals and errors
         error = i_ref - current
-        # solver output is not uniformly spaced: differentiate against t itself
-        derivative_error = np.gradient(error, t)
-        
+
         Kp_array = np.array(Kp_over_time)
         Ki_array = np.array(Ki_over_time)
         Kd_array = np.array(Kd_over_time)

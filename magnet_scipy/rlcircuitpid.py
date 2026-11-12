@@ -375,11 +375,24 @@ class RLCircuitPID:
         return self.pid_controller.get_current_region_name(i_ref)
 
     def get_resistance(self, current: float, temperature: Optional[float] = None) -> float:
-        """Get resistance value based on current and temperature"""
+        """Get the resistance for a given current and inlet temperature.
+
+        Parameters
+        ----------
+        current : float
+            Circuit current [A]; only its magnitude is used, R(I, T) is even in I.
+        temperature : float, optional
+            Inlet temperature [°C]; defaults to the circuit's constant temperature.
+
+        Returns
+        -------
+        float
+            Resistance [Ω].
+        """
         if self.use_variable_resistance:
             if temperature is None:
                 temperature = self.temperature
-            return self.resistance_func(current, temperature)
+            return self.resistance_func(abs(current), temperature)
         else:
             return self.R_constant
 

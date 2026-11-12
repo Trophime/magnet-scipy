@@ -155,8 +155,8 @@ class SimulationOrchestrator:
                 metadata=result.metadata,
                 strategy_type=result.strategy_type,
                 circuit_ids=list(coupled_system.circuit_ids),
-                success=result.metadata.get("success", True),
-                error_message=result.metadata.get("message", None) if not result.metadata.get("success", True) else None
+                success=result.success,
+                error_message=result.error_message
             )
             
         except Exception as e:

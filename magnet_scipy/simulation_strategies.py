@@ -327,11 +327,8 @@ class SimulationRunner:
             elif has_reference and has_pid and not has_voltage:
                 return "pid"
             elif has_voltage and has_reference and has_pid:
-                # Mixed case - need to analyze individual circuits
-                voltage_circuits = [c.circuit_id for c in system.circuits if c.voltage_csv]
-                pid_circuits = [c.circuit_id for c in system.circuits if c.reference_csv and c.pid_controller]
-                self.strategies["hybrid"] = HybridStrategy(voltage_circuits, pid_circuits)
-                return "hybrid"
+                # Both available on every circuit - default to PID, as for a single circuit
+                return "pid"
             else:
                 raise ValueError("System configuration doesn't match any strategy")
         else:  # Single circuit
