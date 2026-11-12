@@ -1,0 +1,133 @@
+{
+  "db": "magnetdb-2026-11-05.duckdb",
+  "db_sha256": "25f56e17cce197f7f2c4d440f05c2371c235aae252b521ff403a2992e2b823b2",
+  "assembly": "M9_A230801_00",
+  "base_config": "M9_M23072801/circuits-pid-temp.json",
+  "data_root": "~/LNCMIG-Data/records",
+  "group": "C2",
+  "runs": {
+    "2023.09.11 - 14:21:59": {
+      "pupitre": "srv-data-install/M9/2023.09.11 - 14:21:59.txt",
+      "overview_records": [
+        "M9_Overview_230911-1343"
+      ],
+      "modes": [
+        "ECO"
+      ],
+      "overview": [
+        "pbsurv/M9/Overview/M9_Overview_230911-1343.tdms"
+      ],
+      "archive": [
+        "pbsurv/M9/Fichiers_Archive/M9_Archive_230911-1343.tdms"
+      ],
+      "default": [],
+      "window_utc": [
+        "2023-09-11 12:22:00",
+        "2023-09-11 12:36:18"
+      ],
+      "active_groups": [
+        "GR1",
+        "GR2"
+      ],
+      "signals_from": "overview",
+      "gaps_s": [],
+      "tin_reconstruction": {
+        "method": "taut string in +/- q/2 band, free ends",
+        "half_band_K": {
+          "GR1": 0.05,
+          "GR2": 0.05
+        }
+      },
+      "tag": "230911-142159",
+      "config": "circuits-230911-142159.json",
+      "value_start": [
+        -6.4807,
+        4.0701
+      ],
+      "time_end": 857.0,
+      "time_step": 0.01
+    },
+    "2024.04.16 - 15:28:04": {
+      "pupitre": "srv-data-install/M9/2024.04.16 - 15:28:04.txt",
+      "overview_records": [
+        "M9_Overview_240416-1528"
+      ],
+      "modes": [
+        "ECO"
+      ],
+      "overview": [
+        "pbsurv/M9/Overview/M9_Overview_240416-1528.tdms"
+      ],
+      "archive": [
+        "pbsurv/M9/Fichiers_Archive/M9_Archive_240416-1528.tdms"
+      ],
+      "default": [],
+      "window_utc": [
+        "2024-04-16 13:28:11.127172",
+        "2024-04-16 13:49:34"
+      ],
+      "active_groups": [
+        "GR1",
+        "GR2"
+      ],
+      "signals_from": "overview",
+      "gaps_s": [],
+      "tin_reconstruction": {
+        "method": "taut string in +/- q/2 band, free ends",
+        "half_band_K": {
+          "GR1": 0.05,
+          "GR2": 0.05
+        }
+      },
+      "tag": "240416-152804",
+      "config": "circuits-240416-152804.json",
+      "value_start": [
+        -5.3675,
+        3.7339
+      ],
+      "time_end": 1282.0,
+      "time_step": 0.01
+    },
+    "2024.07.16 - 11:41:36": {
+      "pupitre": "srv-data-install/M9/2024.07.16 - 11:41:36.txt",
+      "overview_records": [
+        "M9_Overview_240716-1141"
+      ],
+      "modes": [
+        "ECO"
+      ],
+      "overview": [
+        "pbsurv/M9/Overview/M9_Overview_240716-1141.tdms"
+      ],
+      "archive": [
+        "pbsurv/M9/Fichiers_Archive/M9_Archive_240716-1141.tdms"
+      ],
+      "default": [],
+      "window_utc": [
+        "2024-07-16 09:41:42.243221",
+        "2024-07-16 09:57:00"
+      ],
+      "active_groups": [
+        "GR1",
+        "GR2"
+      ],
+      "signals_from": "overview",
+      "gaps_s": [],
+      "tin_reconstruction": {
+        "method": "taut string in +/- q/2 band, free ends",
+        "half_band_K": {
+          "GR1": 0.05,
+          "GR2": 0.05
+        }
+      },
+      "tag": "240716-114136",
+      "config": "circuits-240716-114136.json",
+      "value_start": [
+        -5.2671,
+        3.9016
+      ],
+      "time_end": 917.0,
+      "time_step": 0.01
+    }
+  }
+}

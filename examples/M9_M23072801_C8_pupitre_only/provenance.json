@@ -1,0 +1,48 @@
+{
+  "db": "magnetdb-2026-11-05.duckdb",
+  "db_sha256": "25f56e17cce197f7f2c4d440f05c2371c235aae252b521ff403a2992e2b823b2",
+  "assembly": "M9_A230801_00",
+  "base_config": "M9_M23072801/circuits-pid-temp.json",
+  "data_root": "~/LNCMIG-Data/records",
+  "group": "C8",
+  "runs": {
+    "2024.07.17 - 17:43:46": {
+      "pupitre": "srv-data-install/M9/2024.07.17 - 17:43:46.txt",
+      "overview_records": [],
+      "modes": [],
+      "overview": [],
+      "archive": [],
+      "default": [],
+      "window_utc": [
+        "2024-07-17 15:43:47",
+        "2024-07-18 00:01:34"
+      ],
+      "active_groups": [
+        "GR1",
+        "GR2"
+      ],
+      "signals_from": "pupitre (reference = measured current)",
+      "gaps_s": [
+        [
+          25.0,
+          11.0
+        ]
+      ],
+      "tin_reconstruction": {
+        "method": "taut string in +/- q/2 band, free ends",
+        "half_band_K": {
+          "GR1": 0.05,
+          "GR2": 0.05
+        }
+      },
+      "tag": "240717-174346",
+      "config": "circuits-240717-174346.json",
+      "value_start": [
+        0.0,
+        0.0
+      ],
+      "time_end": 29867.0,
+      "time_step": 0.1
+    }
+  }
+}

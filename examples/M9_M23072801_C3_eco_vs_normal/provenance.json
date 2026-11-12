@@ -1,0 +1,94 @@
+{
+  "db": "magnetdb-2026-11-05.duckdb",
+  "db_sha256": "25f56e17cce197f7f2c4d440f05c2371c235aae252b521ff403a2992e2b823b2",
+  "assembly": "M9_A230801_00",
+  "base_config": "M9_M23072801/circuits-pid-temp.json",
+  "data_root": "~/LNCMIG-Data/records",
+  "group": "C3",
+  "runs": {
+    "2023.09.27 - 14:54:06": {
+      "pupitre": "srv-data-install/M9/2023.09.27 - 14:54:06.txt",
+      "overview_records": [
+        "M9_Overview_230927-1453"
+      ],
+      "modes": [
+        "ECO"
+      ],
+      "overview": [
+        "pbsurv/M9/Overview/M9_Overview_230927-1453.tdms"
+      ],
+      "archive": [
+        "pbsurv/M9/Fichiers_Archive/M9_Archive_230927-1453.tdms"
+      ],
+      "default": [],
+      "window_utc": [
+        "2023-09-27 12:54:07",
+        "2023-09-27 13:09:48"
+      ],
+      "active_groups": [
+        "GR1",
+        "GR2"
+      ],
+      "signals_from": "overview",
+      "gaps_s": [],
+      "tin_reconstruction": {
+        "method": "taut string in +/- q/2 band, free ends",
+        "half_band_K": {
+          "GR1": 0.05,
+          "GR2": 0.05
+        }
+      },
+      "tag": "230927-145406",
+      "config": "circuits-230927-145406.json",
+      "value_start": [
+        -5.4322,
+        3.9428
+      ],
+      "time_end": 940.0,
+      "time_step": 0.01
+    },
+    "2023.10.04 - 12:12:11": {
+      "pupitre": "srv-data-install/M9/2023.10.04 - 12:12:11.txt",
+      "overview_records": [
+        "M9_Overview_231004-1023"
+      ],
+      "modes": [
+        "NORMAL"
+      ],
+      "overview": [
+        "pbsurv/M9/Overview/M9_Overview_231004-1023.tdms"
+      ],
+      "archive": [
+        "pbsurv/M9/Fichiers_Archive/M9_Archive_231004-1023.tdms"
+      ],
+      "default": [
+        "pbsurv/M9/Fichiers_Default/M9_Default_231004-121124_Courants50Hz.tdms"
+      ],
+      "window_utc": [
+        "2023-10-04 10:12:12",
+        "2023-10-04 10:33:04"
+      ],
+      "active_groups": [
+        "GR1",
+        "GR2"
+      ],
+      "signals_from": "overview",
+      "gaps_s": [],
+      "tin_reconstruction": {
+        "method": "taut string in +/- q/2 band, free ends",
+        "half_band_K": {
+          "GR1": 0.05,
+          "GR2": 0.05
+        }
+      },
+      "tag": "231004-121211",
+      "config": "circuits-231004-121211.json",
+      "value_start": [
+        -5.3922,
+        3.9515
+      ],
+      "time_end": 1251.0,
+      "time_step": 0.01
+    }
+  }
+}

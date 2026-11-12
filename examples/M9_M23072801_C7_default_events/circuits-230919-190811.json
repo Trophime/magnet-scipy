@@ -1,0 +1,72 @@
+{
+  "name": "M9_M23072801_230919-190811",
+  "circuits": [
+    {
+      "circuit_id": "M23072801",
+      "temperature_csv": "230919-190811_Tin_GR1.csv",
+      "inductance": 0.002315,
+      "resistance_csv": "Rtot_14Helices.csv",
+      "reference_csv": "230919-190811_reference_GR1.csv",
+      "pid_params": {
+        "Kp_low": 5.0,
+        "Ki_low": 0.2,
+        "Kd_low": 0,
+        "Kp_medium": 12.0,
+        "Ki_medium": 1.0,
+        "Kd_medium": 0,
+        "Kp_high": 12.0,
+        "Ki_high": 1.0,
+        "Kd_high": 0.0,
+        "low_threshold": 60,
+        "high_threshold": 800
+      },
+      "experiment_data": [
+        {
+          "type": "voltage",
+          "key": "voltage",
+          "file": "230919-190811_measured_U_GR1.csv"
+        },
+        {
+          "type": "current",
+          "key": "current",
+          "file": "230919-190811_measured_I_GR1.csv"
+        }
+      ]
+    },
+    {
+      "circuit_id": "M9Bitters_18MW",
+      "temperature_csv": "230919-190811_Tin_GR2.csv",
+      "inductance": 0.01254,
+      "resistance_csv": "Rtot_M9Bitters_18MW.csv",
+      "reference_csv": "230919-190811_reference_GR2.csv",
+      "pid_params": {
+        "Kp_low": 4.0,
+        "Ki_low": 2.0,
+        "Kd_low": 0,
+        "Kp_medium": 4.0,
+        "Ki_medium": 2.0,
+        "Kd_medium": 0.0,
+        "Kp_high": 6.0,
+        "Ki_high": 2.0,
+        "Kd_high": 0,
+        "low_threshold": 60,
+        "high_threshold": 800
+      },
+      "experiment_data": [
+        {
+          "type": "voltage",
+          "key": "voltage",
+          "file": "230919-190811_measured_U_GR2.csv"
+        },
+        {
+          "type": "current",
+          "key": "current",
+          "file": "230919-190811_measured_I_GR2.csv"
+        }
+      ]
+    }
+  ],
+  "mutual_inductances": [
+    0.001965
+  ]
+}

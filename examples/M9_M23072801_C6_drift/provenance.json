@@ -1,0 +1,127 @@
+{
+  "db": "magnetdb-2026-11-05.duckdb",
+  "db_sha256": "25f56e17cce197f7f2c4d440f05c2371c235aae252b521ff403a2992e2b823b2",
+  "assembly": "M9_A230801_00",
+  "base_config": "M9_M23072801/circuits-pid-temp.json",
+  "data_root": "~/LNCMIG-Data/records",
+  "group": "C6",
+  "runs": {
+    "2023.09.14 - 21:43:07": {
+      "pupitre": "srv-data-install/M9/2023.09.14 - 21:43:07.txt",
+      "overview_records": [
+        "M9_Overview_230914-2143"
+      ],
+      "modes": [
+        "ECO"
+      ],
+      "overview": [
+        "pbsurv/M9/Overview/M9_Overview_230914-2143.tdms"
+      ],
+      "archive": [
+        "pbsurv/M9/Fichiers_Archive/M9_Archive_230914-2143.tdms"
+      ],
+      "default": [],
+      "window_utc": [
+        "2023-09-14 19:43:14.272182",
+        "2023-09-14 23:00:43"
+      ],
+      "active_groups": [
+        "GR1",
+        "GR2"
+      ],
+      "signals_from": "overview",
+      "gaps_s": [],
+      "tin_reconstruction": {
+        "method": "taut string in +/- q/2 band, free ends",
+        "half_band_K": {
+          "GR1": 0.05,
+          "GR2": 0.05
+        }
+      },
+      "tag": "230914-214307",
+      "config": "circuits-230914-214307.json",
+      "value_start": [
+        -6.4701,
+        4.1241
+      ],
+      "time_end": 11848.0,
+      "time_step": 0.1
+    },
+    "2024.07.26 - 11:22:11": {
+      "pupitre": "srv-data-install/M9/2024.07.26 - 11:22:11.txt",
+      "overview_records": [
+        "M9_Overview_240726-1132",
+        "M9_Overview_240726-1334"
+      ],
+      "modes": [
+        "ECO"
+      ],
+      "overview": [
+        "pbsurv/M9/Overview/M9_Overview_240726-1132.tdms",
+        "pbsurv/M9/Overview/M9_Overview_240726-1135.tdms",
+        "pbsurv/M9/Overview/M9_Overview_240726-1139.tdms",
+        "pbsurv/M9/Overview/M9_Overview_240726-1140.tdms",
+        "pbsurv/M9/Overview/M9_Overview_240726-1334.tdms",
+        "pbsurv/M9/Overview/M9_Overview_240726-1335.tdms"
+      ],
+      "archive": [
+        "pbsurv/M9/Fichiers_Archive/M9_Archive_240726-1132.tdms",
+        "pbsurv/M9/Fichiers_Archive/M9_Archive_240726-1135.tdms",
+        "pbsurv/M9/Fichiers_Archive/M9_Archive_240726-1140.tdms",
+        "pbsurv/M9/Fichiers_Archive/M9_Archive_240726-1335.tdms",
+        "pbsurv/M9/Fichiers_Archive/M9_Archive_240726-1835.tdms",
+        "pbsurv/M9/Fichiers_Archive/M9_Archive_240726-2334.tdms"
+      ],
+      "default": [
+        "pbsurv/M9/Fichiers_Default/M9_Default_240726-113251_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240726-133604_Courants50Hz.tdms"
+      ],
+      "window_utc": [
+        "2024-07-26 09:32:20.142307",
+        "2024-07-26 22:16:34"
+      ],
+      "active_groups": [
+        "GR1",
+        "GR2"
+      ],
+      "signals_from": "overview",
+      "gaps_s": [
+        [
+          193.0,
+          24.175733000000008
+        ],
+        [
+          401.175733,
+          22.897407000000044
+        ],
+        [
+          430.07314,
+          65.27180199999998
+        ],
+        [
+          7198.344942,
+          130.8294560000004
+        ],
+        [
+          7352.174398,
+          40.718566999999894
+        ]
+      ],
+      "tin_reconstruction": {
+        "method": "taut string in +/- q/2 band, free ends",
+        "half_band_K": {
+          "GR1": 0.05,
+          "GR2": 0.05
+        }
+      },
+      "tag": "240726-112211",
+      "config": "circuits-240726-112211.json",
+      "value_start": [
+        4742.5249,
+        1646.7797
+      ],
+      "time_end": 45852.0,
+      "time_step": 0.1
+    }
+  }
+}

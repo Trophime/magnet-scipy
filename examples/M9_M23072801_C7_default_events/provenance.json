@@ -1,0 +1,207 @@
+{
+  "db": "magnetdb-2026-11-05.duckdb",
+  "db_sha256": "25f56e17cce197f7f2c4d440f05c2371c235aae252b521ff403a2992e2b823b2",
+  "assembly": "M9_A230801_00",
+  "base_config": "M9_M23072801/circuits-pid-temp.json",
+  "data_root": "~/LNCMIG-Data/records",
+  "group": "C7",
+  "runs": {
+    "2023.09.19 - 19:08:11": {
+      "pupitre": "srv-data-install/M9/2023.09.19 - 19:08:11.txt",
+      "overview_records": [
+        "M9_Overview_230919-1906"
+      ],
+      "modes": [
+        "NORMAL"
+      ],
+      "overview": [
+        "pbsurv/M9/Overview/M9_Overview_230919-1906.tdms"
+      ],
+      "archive": [
+        "pbsurv/M9/Fichiers_Archive/M9_Archive_230919-1906.tdms"
+      ],
+      "default": [
+        "pbsurv/M9/Fichiers_Default/M9_Default_230919-193827_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_230919-193857_Courants50Hz.tdms"
+      ],
+      "window_utc": [
+        "2023-09-19 17:08:12",
+        "2023-09-19 17:38:55"
+      ],
+      "active_groups": [
+        "GR1",
+        "GR2"
+      ],
+      "signals_from": "overview",
+      "gaps_s": [],
+      "tin_reconstruction": {
+        "method": "taut string in +/- q/2 band, free ends",
+        "half_band_K": {
+          "GR1": 0.05,
+          "GR2": 0.05
+        }
+      },
+      "tag": "230919-190811",
+      "config": "circuits-230919-190811.json",
+      "value_start": [
+        -6.4509,
+        3.9472
+      ],
+      "time_end": 1842.0,
+      "time_step": 0.01
+    },
+    "2024.07.19 - 17:10:41": {
+      "pupitre": "srv-data-install/M9/2024.07.19 - 17:10:41.txt",
+      "overview_records": [
+        "M9_Overview_240719-1710"
+      ],
+      "modes": [
+        "ECO"
+      ],
+      "overview": [
+        "pbsurv/M9/Overview/M9_Overview_240719-1710.tdms"
+      ],
+      "archive": [
+        "pbsurv/M9/Fichiers_Archive/M9_Archive_240719-1710.tdms",
+        "pbsurv/M9/Fichiers_Archive/M9_Archive_240719-2210.tdms"
+      ],
+      "default": [
+        "pbsurv/M9/Fichiers_Default/M9_Default_240719-200849_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240719-200928_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240719-201134_Courants50Hz.tdms"
+      ],
+      "window_utc": [
+        "2024-07-19 15:10:47.852679",
+        "2024-07-19 21:11:55"
+      ],
+      "active_groups": [
+        "GR1",
+        "GR2"
+      ],
+      "signals_from": "overview",
+      "gaps_s": [],
+      "tin_reconstruction": {
+        "method": "taut string in +/- q/2 band, free ends",
+        "half_band_K": {
+          "GR1": 0.05,
+          "GR2": 0.05
+        }
+      },
+      "tag": "240719-171041",
+      "config": "circuits-240719-171041.json",
+      "value_start": [
+        -5.3493,
+        3.9591
+      ],
+      "time_end": 21667.0,
+      "time_step": 0.1
+    },
+    "2024.07.16 - 21:08:14": {
+      "pupitre": "srv-data-install/M9/2024.07.16 - 21:08:14.txt",
+      "overview_records": [
+        "M9_Overview_240716-2039"
+      ],
+      "modes": [
+        "ECO"
+      ],
+      "overview": [
+        "pbsurv/M9/Overview/M9_Overview_240716-2039.tdms"
+      ],
+      "archive": [
+        "pbsurv/M9/Fichiers_Archive/M9_Archive_240716-2039.tdms"
+      ],
+      "default": [
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-221513_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-221908_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-221952_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-222018_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-222045_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-222109_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-222132_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-222156_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-222225_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-222251_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-222336_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-222405_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-222454_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-222518_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-222547_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-222615_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-222651_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-222716_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-222749_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-222817_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-222851_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-222934_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-223028_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-223100_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-223150_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-223222_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-223252_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-223325_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-223350_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-223435_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-223601_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-223930_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-224119_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-224252_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-224458_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-224745_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-225318_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-225422_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-225549_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-225728_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-225838_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-225908_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-225957_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-230114_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-230156_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-230245_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-230829_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-231226_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-231343_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-231647_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-231858_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-231932_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-231959_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-232037_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-232104_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-232140_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-232347_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-232647_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-232747_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-232822_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-233005_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-233203_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-233338_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-233858_Courants50Hz.tdms",
+        "pbsurv/M9/Fichiers_Default/M9_Default_240716-234135_Courants50Hz.tdms"
+      ],
+      "window_utc": [
+        "2024-07-16 19:08:15",
+        "2024-07-16 22:06:09"
+      ],
+      "active_groups": [
+        "GR1",
+        "GR2"
+      ],
+      "signals_from": "overview",
+      "gaps_s": [],
+      "tin_reconstruction": {
+        "method": "taut string in +/- q/2 band, free ends",
+        "half_band_K": {
+          "GR1": 0.05,
+          "GR2": 0.05
+        }
+      },
+      "tag": "240716-210814",
+      "config": "circuits-240716-210814.json",
+      "value_start": [
+        -5.3142,
+        3.995
+      ],
+      "time_end": 10673.0,
+      "time_step": 0.1
+    }
+  }
+}
