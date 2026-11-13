@@ -63,7 +63,7 @@ are local time (`M9_Overview_240716-2039` → t0 `2024-07-16 18:39`).
 
 `B` = setpoint reached, `t≥30` = time with B ≥ 30 T [s], `teb` = mean
 inlet water temperature with field on [°C], `Pmag` = max magnet power [MW].
-Archive / Default = number of files listed by the overview record(s).
+Archive / Default / Spike = number of files listed by the overview record(s).
 
 ### C0 — Anchors (data already in `examples/M9_M23072801/`)
 
@@ -166,6 +166,47 @@ it becomes a test. 2024.07.16 needs a look first: 65 captures in one run.
 |---|---|---|---|---|
 | 2024.07.17 - 17:43:46 | 35.9 | 28 059 | 14.8 | no references, no Archive: tests the fallback where the reference is rebuilt from `Idcct` |
 
+### C9 — Spikes on the insert, no Default
+
+| Run | Overview | Mode | B [T] | on [s] | teb | Pmag | Archive | Default | Spike |
+|---|---|---|---|---|---|---|---|---|---|
+| 2024.08.04 - 09:12:54 | 240804-0912 | ECO | 33.14 | 14 714 | 15.0 | 18.4 | 1 | 0 | 936 |
+
+A Spike file is a 1 s capture at 4.8 kHz. Spike recording starts on
+2024-07-18, so only the last 19 overview records of the assembly can have
+any. Records with Spike captures and **no** Default: 240718-1428,
+240721-0950 (3 spikes), 240724-1636, 240725-1044 (C5), 240731-0925,
+240801-0911, 240802-0914, 240803-0859, 240804-0912.
+
+How the spikes were attributed (2026-11-12, raw tdms):
+
+- Each capture: every analog channel high-passed (minus a 5 ms moving mean),
+  score = max|hp| / robust σ (MAD). From 240724 on, **every** capture peaks on
+  the insert tap `Interne7` (median z ≈ 75–150). 240718-1428 is mixed
+  (several taps, some weak), so it is not used.
+- 25 random 240804 captures: `Interne7` jumps by 1.5–3.3 V (almost always
+  positive), ms long; the HT phases at the same instant stay at noise level
+  (median z 2.4, none above 10). The spikes are not mains-induced.
+
+Why 240804: most spikes (936), shortest clean candidate, last run of the
+assembly. 528 spikes fall in t = 5400–7200 s; median I_GR1 at a spike is
+27.4 kA (90 % above 23.6 kA). The list of Spike files is in
+`provenance.json` (`spike`).
+
+Expected use: the **detection limit** of the 1 Hz lumped comparison in
+[signal_residual_analysis.md](signal_residual_analysis.md). On 240719 (C7,
+same `Interne7` spikes) neither U/I nor I − ref at 1 Hz shows anything during
+a burst of 186 spikes in 10 min, so no 1 Hz window is expected here either.
+
+Caveats:
+
+- Spike timing: the file `datetime` is ≈ 6.8 s before `wf_start_time`, and
+  `wf_start_time` differs by up to 0.6 s between groups. Use the
+  `Tensions_Aimant` start time for the spike instant. Placing spikes in the
+  run from the (local-time) file name is good to about ±7 s.
+- C5 240725-1044 (544) and C6 240726-1334 (186) carry the same `Interne7`
+  spikes: they are not spike-free references.
+
 ## Excluded — check before use
 
 | Runs | Observation | Question |
@@ -201,9 +242,10 @@ it becomes a test. 2024.07.16 needs a look first: 65 captures in one run.
 2024.07.19 - 17:10:41    C7
 2024.07.16 - 21:08:14    C7  (check first)
 2024.07.17 - 17:43:46    C8
+2024.08.04 - 09:12:54    C9
 ```
 
-23 runs, 22 with an overview record.
+24 runs, 23 with an overview record.
 
 ## Case directories
 
@@ -259,6 +301,8 @@ files; C1 2023.10.13 starts at 5 kA for the same reason.
 5. Closed-loop replay of every case with fixed R, L → per-case error
    report; this list becomes the regression set.
 6. C7 only after each event has been checked in the Archive.
+7. C9 with the residual analysis ([signal_residual_analysis.md](signal_residual_analysis.md))
+   → verify: no 1 Hz window during the spike bursts (detection limit).
 
 ## Open decisions
 
