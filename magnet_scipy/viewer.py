@@ -8,7 +8,8 @@ Views
 -----
 overview
     One run: current / voltage / power / resistance / temperature against time,
-    experiment overlaid, linked time axes, circuit check-boxes.
+    experiment overlaid, pigbrother Default/Spike captures as vertical lines,
+    linked time axes, check-boxes per circuit and event kind.
 residuals
     One run: simulation minus experiment for each experimental series.
 compare
@@ -28,24 +29,134 @@ from __future__ import annotations
 
 import argparse
 import json
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 from matplotlib.figure import Figure
 
 from .csv_utils import _read_csv
+from .experiment_io import read_experiment
 
+DISPLAY_POINTS = 20000  # experimental traces longer than this are decimated for display
 QUANTITIES = ("current", "voltage", "power", "resistance", "temperature")
 UNITS = {
     "current": "A",
     "voltage": "V",
     "power": "W",
     "resistance": "Ohm",
-    "temperature": "K",
+    "temperature": "°C",  # inlet water temperature Tin, as in the R(I, Tin) tables
     "reference": "A",
     "error": "A",
 }
+
+
+EVENT_KINDS = {"Default": "default", "Spikes": "spike"}  # pigbrother mode -> kind
+EVENT_COLORS = {"default": "red", "spike": "purple"}
+
+
+@dataclass
+class Event:
+    """A pigbrother Default or Spike capture.
+
+    Attributes
+    ----------
+    kind : str
+        ``"default"`` or ``"spike"``.
+    t : float
+        Capture time on the simulation time axis [s].
+    subtype : str
+        Default subtype from the filename (e.g. ``"Courants50Hz"``), or ``""``.
+    file : str
+        Source filename.
+    """
+
+    kind: str
+    t: float
+    subtype: str
+    file: str
+
+
+def parse_event_file(
+    filename: str, time_zone: str = "Europe/Paris"
+) -> tuple[str, pd.Timestamp, str] | None:
+    """Parse kind, time and subtype from a pigbrother Default/Spike filename.
+
+    The file itself is never opened. Names follow
+    ``{site}_{Default|Spikes}_{YYMMDD-HHMM[SS]}[_{subtype}].tdms`` in local
+    time. Local time is converted to naive UTC like
+    ``python_magnetrun.utils.timezone.local_to_utc_naive``: an ambiguous time
+    (autumn fall-back) resolves as the first (DST) occurrence, a non-existent
+    one is shifted forward.
+
+    Parameters
+    ----------
+    filename : str
+        Path or bare name, e.g. ``"M9_Default_230919-193827_Courants50Hz.tdms"``.
+    time_zone : str
+        IANA time zone of the timestamp in the name.
+
+    Returns
+    -------
+    tuple or None
+        ``(kind, utc, subtype)`` with ``kind`` in ``{"default", "spike"}`` and
+        ``utc`` a naive-UTC :class:`~pandas.Timestamp`; ``None`` if the name is
+        not a Default/Spike capture or cannot be parsed.
+    """
+    path = Path(filename)
+    parts = [p for p in path.stem.split("_") if p]
+    if path.suffix.lower() != ".tdms" or len(parts) < 3 or parts[1] not in EVENT_KINDS:
+        return None
+    date, _, hms = parts[2].partition("-")
+    fmt = "%y%m%d%H%M%S" if len(hms) >= 6 else "%y%m%d%H%M"
+    try:
+        local = pd.to_datetime(date + hms[:6], format=fmt)
+    except ValueError:
+        return None
+    utc = (
+        local.tz_localize(time_zone, ambiguous=True, nonexistent="shift_forward")
+        .tz_convert("UTC")
+        .tz_localize(None)
+    )
+    return EVENT_KINDS[parts[1]], utc, parts[3] if len(parts) > 3 else ""
+
+
+def load_events(source: dict) -> list[Event]:
+    """Place the Default/Spike captures of a record on the simulation time axis.
+
+    Parameters
+    ----------
+    source : dict
+        Overview-record-like mapping: ``t0`` (naive UTC of simulation t = 0;
+        ``window_utc[0]`` is used if ``t0`` is absent) and the file lists
+        ``sources_default`` / ``sources_spike`` (or ``default`` / ``spike``,
+        as in the campaign ``provenance.json``).
+
+    Returns
+    -------
+    list of Event
+        Events sorted by time; unparseable names are skipped.
+    """
+    t0 = pd.Timestamp(source.get("t0") or source["window_utc"][0])
+    events = []
+    for key in ("default", "spike"):
+        for f in source.get(f"sources_{key}") or source.get(key) or []:
+            parsed = parse_event_file(f)
+            if parsed is not None:
+                kind, utc, subtype = parsed
+                events.append(Event(kind, (utc - t0).total_seconds(), subtype, f))
+    return sorted(events, key=lambda e: e.t)
+
+
+def _provenance_run(cfg: Path) -> dict | None:
+    """Return the ``provenance.json`` run entry whose ``config`` is ``cfg``, if any."""
+    prov = cfg.parent / "provenance.json"
+    if not prov.is_file():
+        return None
+    runs = json.loads(prov.read_text()).get("runs", {})
+    return next((r for r in runs.values() if r.get("config") == cfg.name), None)
 
 
 @dataclass
@@ -62,6 +173,8 @@ class Run:
         ``series[circuit_id][quantity]`` -> :class:`~numpy.ndarray`.
     experiments : dict
         ``experiments[circuit_id][key]`` -> ``(time [s], values)`` tuple.
+    events : list of Event
+        pigbrother Default/Spike captures on the simulation time axis.
     """
 
     name: str
@@ -70,6 +183,7 @@ class Run:
     experiments: dict[str, dict[str, tuple[np.ndarray, np.ndarray]]] = field(
         default_factory=dict
     )
+    events: list[Event] = field(default_factory=list)
 
     @property
     def circuits(self) -> list[str]:
@@ -77,12 +191,18 @@ class Run:
         return list(self.series)
 
 
-def _read_series(path: Path) -> tuple[np.ndarray, np.ndarray]:
-    """Read a 2-column CSV (``time`` plus one value column, any order)."""
-    df = _read_csv(path)
-    tcol = "time" if "time" in df.columns else df.columns[0]
-    vcol = next(c for c in df.columns if c != tcol)
-    return df[tcol].to_numpy(float), df[vcol].to_numpy(float)
+def _decimate(
+    t: np.ndarray, y: np.ndarray, max_points: int = DISPLAY_POINTS
+) -> tuple[np.ndarray, np.ndarray]:
+    """Min/max decimation for display: keeps the envelope of long traces."""
+    k = 2 * len(t) // max_points
+    if k < 2:
+        return t, y
+    m = len(t) // k * k
+    yb = y[:m].reshape(-1, k)
+    idx = np.sort(np.stack([yb.argmin(1), yb.argmax(1)], 1), 1)
+    idx = (idx + k * np.arange(len(yb))[:, None]).ravel()
+    return t[idx], y[idx]
 
 
 def _experiment_entries(config: dict) -> dict[str, list[dict]]:
@@ -98,8 +218,9 @@ def load_run(
     npz_path: str | Path,
     config_path: str | Path | None = None,
     wd: str | Path | None = None,
+    events: str | Path | None = None,
 ) -> Run:
-    """Load a results ``.npz`` and its experimental series.
+    """Load a results ``.npz``, its experimental series and its events.
 
     Parameters
     ----------
@@ -109,13 +230,18 @@ def load_run(
         Circuit JSON. Defaults to the ``.json`` with the same stem next to the
         ``.npz``; experiments are skipped if it does not exist.
     wd : str or :class:`~pathlib.Path`, optional
-        Directory the experiment CSV names are relative to. Defaults to the
-        directory of the JSON.
+        Directory the experiment file names (CSV or TDMS, see
+        :mod:`magnet_scipy.experiment_io`) are relative to. Defaults to the
+        directory of the JSON. Unreadable sources are skipped with a warning.
+    events : str or :class:`~pathlib.Path`, optional
+        JSON with the Default/Spike captures, see :func:`load_events`.
+        Defaults to the run of ``provenance.json`` (next to the circuit JSON)
+        whose ``config`` is the circuit JSON; no events if there is none.
 
     Returns
     -------
     Run
-        Simulation series and, when available, experimental series.
+        Simulation series and, when available, experimental series and events.
     """
     npz_path = Path(npz_path)
     data = np.load(npz_path, allow_pickle=True)
@@ -137,11 +263,18 @@ def load_run(
         base = Path(wd) if wd else cfg.parent
         for cid, entries in _experiment_entries(json.loads(cfg.read_text())).items():
             for e in entries:
-                f = base / e["file"]
-                if f.exists() and cid in run.series:
-                    run.experiments.setdefault(cid, {})[e.get("key", e["type"])] = (
-                        _read_series(f)
-                    )
+                if cid not in run.series:
+                    continue
+                try:
+                    series = read_experiment(e, base)
+                except (FileNotFoundError, ImportError, KeyError) as exc:
+                    warnings.warn(f"{cid}: experiment {e['file']} skipped: {exc}")
+                    continue
+                run.experiments.setdefault(cid, {})[e.get("key", e["type"])] = series
+
+    source = json.loads(Path(events).read_text()) if events else _provenance_run(cfg)
+    if source:
+        run.events = load_events(source)
     return run
 
 
@@ -179,13 +312,49 @@ def _rms_mae(r: np.ndarray) -> tuple[float, float]:
     return float(np.sqrt(np.mean(r**2))), float(np.mean(np.abs(r)))
 
 
-def _add_circuit_toggle(fig: Figure, circuits: list[str], artists: dict) -> object:
-    """Add check-boxes toggling the artists (``artists[circuit]``) per circuit."""
+def _draw_events(axes, events: list[Event]) -> dict[str, list]:
+    """Draw one dashed vertical line per event on every axis; return artists per kind."""
+    from matplotlib.transforms import blended_transform_factory
+
+    artists: dict[str, list] = {}
+    for j, ax in enumerate(axes):
+        labelled = set()
+        for ev in events:
+            ln = ax.axvline(
+                ev.t,
+                color=EVENT_COLORS[ev.kind],
+                ls="--",
+                lw=0.8,
+                alpha=0.7,
+                label=None if ev.kind in labelled else ev.kind,
+            )
+            labelled.add(ev.kind)
+            artists.setdefault(ev.kind, []).append(ln)
+            if j == 0 and ev.subtype:
+                tr = blended_transform_factory(ax.transData, ax.transAxes)
+                txt = ax.text(
+                    ev.t,
+                    0.02,
+                    ev.subtype,
+                    transform=tr,
+                    rotation=90,
+                    fontsize=6,
+                    va="bottom",
+                    ha="left",  # right of the line: hidden with it when off-axis
+                    color=EVENT_COLORS[ev.kind],
+                    clip_on=True,
+                )
+                artists[ev.kind].append(txt)
+    return artists
+
+
+def _add_toggle(fig: Figure, labels: list[str], artists: dict) -> object:
+    """Add check-boxes toggling the artists (``artists[label]``) per label."""
     from matplotlib.widgets import CheckButtons
 
-    ax = fig.add_axes((0.005, 0.80, 0.12, 0.025 + 0.04 * len(circuits)))
-    ax.set_title("circuits", fontsize=8)
-    cb = CheckButtons(ax, circuits, [True] * len(circuits))
+    ax = fig.add_axes((0.005, 0.80, 0.12, 0.025 + 0.04 * len(labels)))
+    ax.set_title("show", fontsize=8)
+    cb = CheckButtons(ax, labels, [True] * len(labels))
 
     def _toggle(label):
         for a in artists[label]:
@@ -209,7 +378,8 @@ def plot_overview(run: Run, fig: Figure | None = None) -> Figure:
     Returns
     -------
     :class:`~matplotlib.figure.Figure`
-        Figure with linked time axes and circuit check-boxes.
+        Figure with linked time axes, Default/Spike event lines and
+        check-boxes per circuit and per event kind.
     """
     import matplotlib.pyplot as plt
 
@@ -238,9 +408,15 @@ def plot_overview(run: Run, fig: Figure | None = None) -> Figure:
             exp = run.experiments.get(cid, {}).get(q)
             if exp is not None:
                 (ln,) = ax.plot(
-                    *exp, color=_color(i), ls=":", lw=1.5, label=f"{cid} exp"
+                    *_decimate(*exp),
+                    color=_color(i),
+                    ls=":",
+                    lw=1.5,
+                    label=f"{cid} exp",
                 )
                 artists[cid].append(ln)
+    artists.update(_draw_events(axes, run.events))
+    for ax, q in zip(axes, quantities, strict=True):
         ax.set_ylabel(f"{q} [{UNITS[q]}]")
         ax.grid(alpha=0.3)
         ax.legend(fontsize=7, loc="upper right", ncol=2)
@@ -248,7 +424,7 @@ def plot_overview(run: Run, fig: Figure | None = None) -> Figure:
     axes[-1].set_xlim(run.time[0], run.time[-1])
     fig.suptitle(run.name)
     fig.subplots_adjust(left=0.22, right=0.98, top=0.95, hspace=0.12)
-    fig._toggle = _add_circuit_toggle(fig, run.circuits, artists)  # type: ignore[attr-defined]
+    fig._toggle = _add_toggle(fig, list(artists), artists)  # type: ignore[attr-defined]
     return fig
 
 
@@ -265,7 +441,8 @@ def plot_residuals(run: Run, fig: Figure | None = None) -> Figure:
     Returns
     -------
     :class:`~matplotlib.figure.Figure`
-        One panel per experimental quantity (empty note if there is none).
+        One panel per experimental quantity (empty note if there is none),
+        with the Default/Spike event lines.
     """
     import matplotlib.pyplot as plt
 
@@ -282,16 +459,19 @@ def plot_residuals(run: Run, fig: Figure | None = None) -> Figure:
                 continue
             rms, mae = _rms_mae(res[1])
             ax.plot(
-                *res,
+                *_decimate(*res),
                 color=_color(i),
                 lw=0.8,
                 label=f"{cid}: RMS={rms:.3g} MAE={mae:.3g}",
             )
         ax.axhline(0, color="k", lw=0.5)
+    _draw_events(axes, run.events)
+    for ax, k in zip(axes, keys, strict=True):
         ax.set_ylabel(f"sim - exp {k} [{UNITS.get(k, '')}]")
         ax.grid(alpha=0.3)
         ax.legend(fontsize=8, loc="upper right")
     axes[-1].set_xlabel("t [s]")
+    axes[-1].set_xlim(run.time[0], run.time[-1])
     fig.suptitle(f"{run.name} - residuals")
     fig.tight_layout()
     return fig
@@ -333,9 +513,9 @@ def plot_compare(
         exp = exp or run.experiments.get(circuit, {}).get(quantity)
         res = residual(run, circuit, quantity)
         if res is not None:
-            axr.plot(*res, color=_color(i), lw=0.8)
+            axr.plot(*_decimate(*res), color=_color(i), lw=0.8)
     if exp is not None:
-        ax.plot(*exp, "k:", lw=1.5, label="experiment")
+        ax.plot(*_decimate(*exp), "k:", lw=1.5, label="experiment")
     ends = [r.time[[0, -1]] for r in runs if circuit in r.series]
     if ends:
         ax.set_xlim(min(e[0] for e in ends), max(e[1] for e in ends))
@@ -451,6 +631,11 @@ def main(argv: list[str] | None = None) -> None:
         s.add_argument("npz")
         s.add_argument("--config", help="circuit JSON (default: <npz stem>.json)")
         s.add_argument("--wd", help="directory of the experiment CSV files")
+        s.add_argument(
+            "--events",
+            help="JSON with t0 (UTC) and sources_default/sources_spike "
+            "(default: matching run of provenance.json)",
+        )
     s = sub.add_parser("compare")
     s.add_argument("npz", nargs="+")
     s.add_argument("-c", "--circuit", required=True)
@@ -463,9 +648,9 @@ def main(argv: list[str] | None = None) -> None:
     a = p.parse_args(argv)
 
     if a.view == "overview":
-        plot_overview(load_run(a.npz, a.config, a.wd))
+        plot_overview(load_run(a.npz, a.config, a.wd, a.events))
     elif a.view == "residuals":
-        plot_residuals(load_run(a.npz, a.config, a.wd))
+        plot_residuals(load_run(a.npz, a.config, a.wd, a.events))
     elif a.view == "compare":
         plot_compare([load_run(f) for f in a.npz], a.circuit, a.quantity)
     else:

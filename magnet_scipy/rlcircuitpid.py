@@ -4,10 +4,12 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import numpy as np
 
 from .csv_utils import (
+    _make_interp1d,
     create_2d_function_from_csv,
     create_function_from_csv,
     create_piecewise_linear_derivative,
 )
+from .experiment_io import is_tdms, read_experiment, source_paths
 
 # Import the new PID controller and CSV utilities
 from .pid_controller import PIDController, create_adaptive_pid_controller
@@ -57,7 +59,10 @@ class RLCircuitPID:
             Unique identifier for this circuit (required for coupled systems).
         experimental_data : list of dict, optional
             Experimental data for validation; each dict has ``"file"``,
-            ``"type"`` and ``"key"`` (column name) entries.
+            ``"type"`` and ``"key"`` (column name) entries. ``"file"`` may
+            also be a TDMS path or a list of them, with ``"group"``,
+            ``"channel"`` and optional ``"time_shift"`` [s]; see
+            :mod:`magnet_scipy.experiment_io`.
         **pid_kwargs
             Deprecated individual PID parameters, used to build a controller
             when ``pid_controller`` is not given.
@@ -127,9 +132,13 @@ class RLCircuitPID:
 
         for exp_data in self.experimental_data:
             try:
-                func, time_data, values_data = create_function_from_csv(
-                    exp_data["file"], "time", exp_data["key"], method="linear"
-                )
+                if is_tdms(exp_data["file"]):
+                    time_data, values_data = read_experiment(exp_data)
+                    func = _make_interp1d(time_data, values_data, "linear")
+                else:
+                    func, time_data, values_data = create_function_from_csv(
+                        exp_data["file"], "time", exp_data["key"], method="linear"
+                    )
                 self.experimental_functions[f'{exp_data["type"]}_{exp_data["key"]}'] = {
                     "function": func,
                     "time_data": time_data,
@@ -165,24 +174,23 @@ class RLCircuitPID:
     def _load_single_experimental_data(self, exp_data: dict):
         """Load a single experimental data entry"""
         try:
-            if exp_data["file"].endswith(".csv"):
+            if is_tdms(exp_data["file"]):
+                time_data, values_data = read_experiment(exp_data)
+                func = _make_interp1d(time_data, values_data, "linear")
+            elif exp_data["file"].endswith(".csv"):
                 func, time_data, values_data = create_function_from_csv(
                     exp_data["file"], "time", exp_data["key"], method="linear"
                 )
-                self.experimental_functions[f'{exp_data["type"]}_{exp_data["key"]}'] = {
-                    "function": func,
-                    "time_data": time_data,
-                    "values_data": values_data,
-                    "type": exp_data["type"],
-                    "key": exp_data["key"],
-                    "file": exp_data["file"],
-                }
-            elif exp_data["file"].endswith(".tdms"):
-                raise NotImplementedError(
-                    f'TDMS file support not yet implemented for {exp_data["file"]}'
-                )
             else:
                 raise ValueError(f'Unsupported file format: {exp_data["file"]}')
+            self.experimental_functions[f'{exp_data["type"]}_{exp_data["key"]}'] = {
+                "function": func,
+                "time_data": time_data,
+                "values_data": values_data,
+                "type": exp_data["type"],
+                "key": exp_data["key"],
+                "file": exp_data["file"],
+            }
         except Exception as e:
             raise RuntimeError(
                 f'Error loading experimental data from {exp_data["file"]}: {e}'
@@ -619,12 +627,17 @@ class RLCircuitPID:
                 if not exp_data["file"]:
                     raise ValueError("File path cannot be empty")
                 else:
-                    if exp_data["file"].endswith(".tdms"):
-                        # For TDMS files, we'd need additional handling
-                        # For now, raise a helpful error
-                        raise NotImplementedError(
-                            f'TDMS file support not yet implemented for {exp_data["file"]}: Please convert to CSV format.'
-                        )
+                    if is_tdms(exp_data["file"]):
+                        if not exp_data.get("group") or not exp_data.get("channel"):
+                            raise ValueError(
+                                f'TDMS experimental data needs "group" and "channel": {exp_data["file"]}'
+                            )
+                        missing = [p for p in source_paths(exp_data) if not p.is_file()]
+                        if missing:
+                            print(f"❌ Experimental Data TDMS file not found: {missing}")
+                            sys.exit(1)
+                        print(f'✓ Experimental Data TDMS found: {exp_data["file"]}')
+                        continue
 
                     try:
                         pd.read_csv(exp_data["file"], sep=None, engine="python")

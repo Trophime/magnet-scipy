@@ -62,6 +62,10 @@ gui = [
 web = [
     "tornado>=6.0",
 ]
+# pigbrother TDMS files as experiment_data sources
+tdms = [
+    "nptdms @ git+https://github.com/Trophime/npTDMS.git@cc79e1be",
+]
 
 [dependency-groups]
 # uv-native dev group (installed by default with `uv sync`)
@@ -188,6 +192,7 @@ module = [
     "matplotlib.*",
     "seaborn.*",
     "pandas.*",
+    "nptdms.*",
 ]
 ignore_missing_imports = true
 

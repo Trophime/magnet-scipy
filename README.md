@@ -309,6 +309,45 @@ order, any separator). A `key` of `current`, `voltage`, `power`, `resistance` or
 ]
 ```
 
+`file` can also be a pigbrother TDMS file (Overview or Archive), or a list of
+them, like `sources_archive` of a magnetdb overview record. Name the TDMS
+`group` and `channel`. The files are ordered by `wf_start_time` and joined on
+one time axis that starts at the earliest file. `time_shift` [s] is added to it
+(`0.5` reproduces the time axis of the pigbrother CSV exports). Only the
+requested channel is read. TDMS sources need the `tdms` extra
+(`pip install -e ".[tdms]"` or `uv sync --extra tdms`). The simulation
+(`magnet-scipy`, `magnet-scipy-coupled`) accepts the same entries:
+
+```json
+{"type": "current", "key": "current",
+ "file": ["M9_Archive_230916-1755.tdms"],
+ "group": "Courants_Alimentations", "channel": "Courant GR1", "time_shift": 0.0}
+```
+
+Experimental traces longer than 20 000 points (for example a 120 Hz Archive) are
+min/max-decimated for display only; residuals and RMS/MAE use every sample.
+
+The `overview` and `residuals` views draw the pigbrother Default (red) and Spike
+(purple) captures as dashed vertical lines. Defaults are labelled with their
+subtype (e.g. `Courants50Hz`), and check-boxes toggle each kind. Positions come
+from the filenames alone (`{site}_{Default|Spikes}_{YYMMDD-HHMMSS}[_{subtype}].tdms`,
+Europe/Paris local time); the files are never opened. A line marks the start of
+the capture file, which is not necessarily the moment of the event inside it.
+Event sources:
+
+- by default, the run of `provenance.json` (written by
+  `examples/build_M23072801_campaign.py`, next to the circuit JSON) whose
+  `config` is the circuit JSON: its `default` / `spike` lists, with t = 0 at
+  `window_utc[0]`;
+- or `--events FILE`, a JSON shaped like a magnetdb overview record, where
+  `t0` is the naive-UTC instant of simulation t = 0:
+
+```json
+{"t0": "2023-09-19 17:08:12",
+ "sources_default": ["M9_Default_230919-193827_Courants50Hz.tdms"],
+ "sources_spike": ["M9_Spikes_230919-193810.tdms"]}
+```
+
 The `flow` view needs the optional
 [python_magnetcooling](https://github.com/MagnetDB/python_magnetcooling) package.
 Its CSV has columns `current` [A], `pump_speed` [rpm], `flow_rate` [l/s],
