@@ -273,6 +273,47 @@ Both commands support automatic strategy detection based on your configuration:
 
 Use `--list-strategies` to see detailed information about each strategy.
 
+### Viewing Results and Comparing with Experiments
+
+`magnet-scipy-viewer` (or `python -m magnet_scipy.viewer`) opens interactive
+matplotlib windows on the NPZ files written with `--save-results`:
+
+```bash
+# All quantities of a run, experiment overlaid, circuit check-boxes
+magnet-scipy-viewer overview run.npz
+
+# Simulation minus experiment, RMS/MAE in the legend
+magnet-scipy-viewer residuals run.npz
+
+# One quantity of one circuit across several runs (e.g. a PID sweep)
+magnet-scipy-viewer compare a.npz b.npz -c M23072801 -q current
+
+# Pump speed / flow / pressure vs current with the hydraulic fit
+magnet-scipy-viewer flow records.csv --imax 28000 [--method piecewise] [--threshold 300]
+
+# Write a PNG instead of opening a window (global option, before the view)
+magnet-scipy-viewer --save out.png overview run.npz
+```
+
+Experimental series are taken from the `experiment_data` entries of the circuit
+JSON. By default the viewer reads `<npz stem>.json` next to the NPZ and resolves
+CSV names relative to it; use `--config` and `--wd` (overview/residuals) to point
+elsewhere. Each experiment CSV holds a `time` column and one value column (any
+order, any separator). A `key` of `current`, `voltage`, `power`, `resistance` or
+`temperature` is matched to the corresponding simulated quantity:
+
+```json
+"experiment_data": [
+  {"type": "current", "key": "current", "file": "Courant_GR1_vs_Time.csv"},
+  {"type": "voltage", "key": "voltage", "file": "Tensions_Aimant_vs_Time.csv"}
+]
+```
+
+The `flow` view needs the optional
+[python_magnetcooling](https://github.com/MagnetDB/python_magnetcooling) package.
+Its CSV has columns `current` [A], `pump_speed` [rpm], `flow_rate` [l/s],
+`pressure` [bar] and optionally `back_pressure` [bar].
+
 ### Configuration Files
 
 #### Single Circuit Configuration
@@ -348,7 +389,8 @@ All relative paths in the configuration file will be resolved relative to the wo
 #### Results Files  
 - NPZ format containing all simulation data
 - Includes time arrays, current values, voltages, and metadata
-- Can be loaded with `numpy.load()` for further analysis
+- Can be loaded with `numpy.load()` for further analysis, or browsed with
+  `magnet-scipy-viewer` (see above)
 
 #### Analytics
 - Detailed performance metrics when using `--show-analytics`

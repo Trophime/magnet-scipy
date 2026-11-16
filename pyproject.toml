@@ -80,6 +80,7 @@ dev = [
 [project.scripts]
 magnet-scipy = "magnet_scipy.main_refactor:main"
 magnet-scipy-coupled = "magnet_scipy.coupled_main_refactor:main"
+magnet-scipy-viewer = "magnet_scipy.viewer:main"
 
 [project.urls]
 Homepage = "https://github.com/Trophime/magnet_scipy"
