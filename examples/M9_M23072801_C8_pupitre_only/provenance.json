@@ -12,7 +12,9 @@
       "modes": [],
       "overview": [],
       "archive": [],
+      "archive_from_window": [],
       "default": [],
+      "spike": [],
       "window_utc": [
         "2024-07-17 15:43:47",
         "2024-07-18 00:01:34"
@@ -28,6 +30,8 @@
           11.0
         ]
       ],
+      "archive_span_s": null,
+      "archive_gaps_s": [],
       "tin_reconstruction": {
         "method": "taut string in +/- q/2 band, free ends",
         "half_band_K": {

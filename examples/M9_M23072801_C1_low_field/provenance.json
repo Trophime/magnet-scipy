@@ -24,7 +24,9 @@
         "pbsurv/M9/Fichiers_Archive/M9_Archive_230906-1043.tdms",
         "pbsurv/M9/Fichiers_Archive/M9_Archive_230906-1115.tdms"
       ],
+      "archive_from_window": [],
       "default": [],
+      "spike": [],
       "window_utc": [
         "2023-09-06 09:15:52",
         "2023-09-06 10:09:06"
@@ -34,6 +36,11 @@
       ],
       "signals_from": "overview",
       "gaps_s": [],
+      "archive_span_s": [
+        0.004382,
+        3193.996048667
+      ],
+      "archive_gaps_s": [],
       "tin_reconstruction": {
         "method": "taut string in +/- q/2 band, free ends",
         "half_band_K": {
@@ -62,9 +69,11 @@
       "archive": [
         "pbsurv/M9/Fichiers_Archive/M9_Archive_230906-1459.tdms"
       ],
+      "archive_from_window": [],
       "default": [
         "pbsurv/M9/Fichiers_Default/M9_Default_230906-161038_Courants50Hz.tdms"
       ],
+      "spike": [],
       "window_utc": [
         "2023-09-06 14:11:13",
         "2023-09-06 14:42:10"
@@ -74,6 +83,11 @@
       ],
       "signals_from": "overview",
       "gaps_s": [],
+      "archive_span_s": [
+        0.003590667,
+        1856.995257333
+      ],
+      "archive_gaps_s": [],
       "tin_reconstruction": {
         "method": "taut string in +/- q/2 band, free ends",
         "half_band_K": {
@@ -102,7 +116,9 @@
       "archive": [
         "pbsurv/M9/Fichiers_Archive/M9_Archive_231012-1629.tdms"
       ],
+      "archive_from_window": [],
       "default": [],
+      "spike": [],
       "window_utc": [
         "2023-10-12 14:31:32",
         "2023-10-12 14:48:54"
@@ -112,6 +128,11 @@
       ],
       "signals_from": "overview",
       "gaps_s": [],
+      "archive_span_s": [
+        0.001312333,
+        1041.992979
+      ],
+      "archive_gaps_s": [],
       "tin_reconstruction": {
         "method": "taut string in +/- q/2 band, free ends",
         "half_band_K": {
@@ -140,7 +161,9 @@
       "archive": [
         "pbsurv/M9/Fichiers_Archive/M9_Archive_231013-0916.tdms"
       ],
+      "archive_from_window": [],
       "default": [],
+      "spike": [],
       "window_utc": [
         "2023-10-13 07:16:26.241814",
         "2023-10-13 07:26:00"
@@ -150,6 +173,11 @@
       ],
       "signals_from": "overview",
       "gaps_s": [],
+      "archive_span_s": [
+        0.0,
+        573.75
+      ],
+      "archive_gaps_s": [],
       "tin_reconstruction": {
         "method": "taut string in +/- q/2 band, free ends",
         "half_band_K": {

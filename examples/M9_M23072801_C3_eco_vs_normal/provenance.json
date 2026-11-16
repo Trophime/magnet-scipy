@@ -20,7 +20,9 @@
       "archive": [
         "pbsurv/M9/Fichiers_Archive/M9_Archive_230927-1453.tdms"
       ],
+      "archive_from_window": [],
       "default": [],
+      "spike": [],
       "window_utc": [
         "2023-09-27 12:54:07",
         "2023-09-27 13:09:48"
@@ -31,6 +33,11 @@
       ],
       "signals_from": "overview",
       "gaps_s": [],
+      "archive_span_s": [
+        0.002622667,
+        940.994289333
+      ],
+      "archive_gaps_s": [],
       "tin_reconstruction": {
         "method": "taut string in +/- q/2 band, free ends",
         "half_band_K": {
@@ -61,9 +68,11 @@
       "archive": [
         "pbsurv/M9/Fichiers_Archive/M9_Archive_231004-1023.tdms"
       ],
+      "archive_from_window": [],
       "default": [
         "pbsurv/M9/Fichiers_Default/M9_Default_231004-121124_Courants50Hz.tdms"
       ],
+      "spike": [],
       "window_utc": [
         "2023-10-04 10:12:12",
         "2023-10-04 10:33:04"
@@ -74,6 +83,11 @@
       ],
       "signals_from": "overview",
       "gaps_s": [],
+      "archive_span_s": [
+        0.007564667,
+        1251.999231333
+      ],
+      "archive_gaps_s": [],
       "tin_reconstruction": {
         "method": "taut string in +/- q/2 band, free ends",
         "half_band_K": {

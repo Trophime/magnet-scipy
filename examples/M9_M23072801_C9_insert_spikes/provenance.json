@@ -20,6 +20,7 @@
       "archive": [
         "pbsurv/M9/Fichiers_Archive/M9_Archive_240804-0912.tdms"
       ],
+      "archive_from_window": [],
       "default": [],
       "spike": [
         "pbsurv/M9/Fichiers_Spike/M9_Spikes_240804-091706.tdms",
@@ -969,6 +970,11 @@
       ],
       "signals_from": "overview",
       "gaps_s": [],
+      "archive_span_s": [
+        0.0,
+        14873.85
+      ],
+      "archive_gaps_s": [],
       "tin_reconstruction": {
         "method": "taut string in +/- q/2 band, free ends",
         "half_band_K": {

@@ -28,6 +28,17 @@ Signals = `pupitre` (no usable Overview): reference and measured current are
 both `Idcct1 + Idcct2` (GR1) or `Idcct3 + Idcct4` (GR2); voltage is
 `Ucoil1..14` (GR1) or `Ucoil15 + Ucoil16` (GR2).
 
+Archive (120 Hz pigbrother), when the run has one:
+
+- `<tag>_archive_{I,U}_GR*.csv`: same channels as the Overview measured
+  files, same window and time 0. The Archive files of a run are the
+  `sources_archive` of its overview records in the DB (`archive`), plus the
+  DB Archive files whose name time falls in the window but that no record
+  links (`archive_from_window`, e.g. 5 h continuation files). The configs do not
+  use them (for L identification and Default events). Covered span and
+  holes (not interpolated) per run in `provenance.json` (`archive_span_s`,
+  `archive_gaps_s`).
+
 Always:
 
 - `<tag>_Tin_GR*.csv`: pupitre `Tin1` (insert) and `Tin2` (Bitters). The

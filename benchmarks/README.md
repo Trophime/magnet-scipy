@@ -71,6 +71,31 @@ changing a CSV input.
 `environment.json` records the CPU, the Python/NumPy/SciPy versions and the
 command-line options. BLAS is pinned to one thread.
 
+## M23072801 test campaign
+
+`bench_campaign.py` runs the same benchmark on every run of the
+`examples/M9_M23072801_C*` campaign written by
+`examples/build_M23072801_campaign.py`. It builds one case per run from each
+group's `provenance.json` (named `<group>_<tag>`, e.g. `C0_230916-175522`, with
+the run's config, initial currents, window and max step) and writes them to
+`<output-dir>/cases.json`. It then runs `bench_solvers.py` on them and adds a
+`summary.md` with one row per run and one column per method: wall time, steps,
+and current RMSE vs measurements and vs the reference solution.
+
+```bash
+python benchmarks/bench_campaign.py --list                       # runs and their windows
+python benchmarks/bench_campaign.py --groups C0 C1 C2 C3         # short runs (< 1 h)
+python benchmarks/bench_campaign.py --max-t-end 2000 --rtol 1e-4 1e-6 1e-8
+python benchmarks/bench_campaign.py --runs 230916-175522 --methods Radau BDF LSODA RK45
+```
+
+Only Radau, BDF and LSODA run by default. The C4–C9 runs cover 3–13 h of data
+at `max_step` = 0.1 s, which the explicit methods cannot solve within the
+timeout. `--groups`, `--runs` and `--max-t-end` select the runs. Any other option
+is passed on to `bench_solvers.py`. Results go to `results/campaign/` by default.
+On the long runs the reference solution (Radau, rtol = 1e-10) can take longer
+than `--timeout`. Increase the timeout or use `--no-reference`.
+
 ## Adding a case
 
 Add an entry to `cases.json`:

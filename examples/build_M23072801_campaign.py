@@ -2,7 +2,8 @@
 
 One directory per group of ``prompts/test_campaign_M23072801.md`` is written
 under ``examples/``. Each run of a group gets its reference currents, inlet
-temperatures, measured currents/voltages and a coupled-circuit config that
+temperatures, measured currents/voltages (Overview 1 Hz and, when the run
+has one, Archive 120 Hz) and a coupled-circuit config that
 ``python -m magnet_scipy.coupled_main_refactor`` loads as is.
 
 Requires ``duckdb``, ``nptdms``, ``pandas`` (e.g. the magnetdb-duckdb-demo
@@ -40,6 +41,7 @@ R_TABLES = ("Rtot_14Helices.csv", "Rtot_M9Bitters_18MW.csv")
 LONG_RUN_S = 3600.0  # above this, use a coarser max solver step
 ACTIVE_CURRENT_A = 100.0  # a GR whose pupitre current never exceeds this is off
 GAP_S = 5.0  # holes in the time series longer than this are reported
+ARCHIVE_FLOAT_FORMAT = "%.10g"  # keeps the 1/120 s time step up to ~1e5 s
 
 # GR1 = insert (circuit 0 of the base config), GR2 = Bitters (circuit 1).
 GROUPS = ("GR1", "GR2")
@@ -218,47 +220,67 @@ def dequantize(x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, float]:
     return _funnel(xe, ye - delta, ye + delta)[n - 1:2 * n - 1], delta
 
 
-def read_overview(paths: list[Path]) -> pd.DataFrame:
-    """Read and concatenate the channels needed from Overview tdms files.
+def read_pigbrother(paths: list[Path]) -> pd.DataFrame:
+    """Read and concatenate the channels needed from pigbrother tdms files.
+
+    Overview (1 Hz) and Archive (120 Hz) files have the same groups and
+    channel names; only the channels used are read from disk.
 
     Parameters
     ----------
     paths : list of Path
-        Overview ``.tdms`` files of the run (one per non-merged record).
+        Overview or Archive ``.tdms`` files of the run.
 
     Returns
     -------
     :class:`~pandas.DataFrame`
         Columns ``utc``, ``ref_GR*``, ``I_GR*`` [A] and ``U_GR*`` [V], sorted
         by time, duplicated timestamps removed. A GR whose channels are not in
-        a file (single-group recordings) is NaN for that file.
+        a file (single-group recordings) is NaN for that file. Files without
+        channels are skipped.
     """
     frames = []
     for path in paths:
-        tdms = TdmsFile.read(path)
-        cur = {c.name.replace(" ", "_"): c for c in tdms["Courants_Alimentations"].channels()}
-        mag = {c.name.replace(" ", "_"): c for c in tdms["Tensions_Aimant"].channels()}
-        ch0 = next(cur[OVERVIEW_CURRENT[gr]] for gr in GROUPS if OVERVIEW_CURRENT[gr] in cur)
-        start = pd.Timestamp(ch0.properties["wf_start_time"])
-        dt = float(ch0.properties["wf_increment"])
-        n = len(ch0)
-        data = {"utc": start + pd.to_timedelta(np.arange(n) * dt, unit="s")}
-        for gr in GROUPS:
-            if OVERVIEW_CURRENT[gr] not in cur:
-                for k in ("ref", "I", "U"):
-                    data[f"{k}_{gr}"] = np.full(n, np.nan)
-                continue
-            data[f"ref_{gr}"] = sum(cur[c][:n].astype(float) for c in OVERVIEW_REFERENCE[gr])
-            data[f"I_{gr}"] = cur[OVERVIEW_CURRENT[gr]][:n].astype(float)
-            data[f"U_{gr}"] = mag[OVERVIEW_VOLTAGE[gr]][:n].astype(float)
+        with TdmsFile.open(path) as tdms:
+            if "Courants_Alimentations" not in [g.name for g in tdms.groups()]:
+                continue  # empty file (aborted acquisition)
+            cur = {c.name.replace(" ", "_"): c for c in tdms["Courants_Alimentations"].channels()}
+            mag = {c.name.replace(" ", "_"): c for c in tdms["Tensions_Aimant"].channels()}
+            ch0 = next(cur[OVERVIEW_CURRENT[gr]] for gr in GROUPS if OVERVIEW_CURRENT[gr] in cur)
+            start = pd.Timestamp(ch0.properties["wf_start_time"])
+            dt = float(ch0.properties["wf_increment"])
+            n = len(ch0)
+            data = {"utc": start + pd.to_timedelta(np.arange(n) * dt, unit="s")}
+            for gr in GROUPS:
+                if OVERVIEW_CURRENT[gr] not in cur:
+                    for k in ("ref", "I", "U"):
+                        data[f"{k}_{gr}"] = np.full(n, np.nan)
+                    continue
+                data[f"ref_{gr}"] = sum(cur[c][:n].astype(float) for c in OVERVIEW_REFERENCE[gr])
+                data[f"I_{gr}"] = cur[OVERVIEW_CURRENT[gr]][:n].astype(float)
+                data[f"U_{gr}"] = mag[OVERVIEW_VOLTAGE[gr]][:n].astype(float)
         frames.append(pd.DataFrame(data))
     df = pd.concat(frames).sort_values("utc")
     return df.drop_duplicates("utc").reset_index(drop=True)
 
 
-def write_series(path: Path, t: np.ndarray, y: np.ndarray, name: str) -> None:
+def write_series(path: Path, t: np.ndarray, y: np.ndarray, name: str,
+                 float_format: str = "%.6g") -> None:
     """Write a ``time,<name>`` CSV."""
-    pd.DataFrame({"time": t, name: y}).to_csv(path, index=False, float_format="%.6g")
+    pd.DataFrame({"time": t, name: y}).to_csv(path, index=False, float_format=float_format)
+
+
+def _archive_starts(files: dict[str, str]) -> pd.Series:
+    """Return the naive UTC start of every Archive file, read from its name (minute, local time)."""
+    names = [n for n in files if "_Archive_" in n]
+    stamps = [n.rsplit("_", 1)[1].removesuffix(".tdms") for n in names]
+    return to_utc(pd.Series(pd.to_datetime(stamps, format="%y%m%d-%H%M"), index=names))
+
+
+def _gaps(t: np.ndarray) -> list[list[float]]:
+    """Return ``[t_start, length]`` [s] of the holes longer than ``GAP_S`` in ``t``."""
+    dt = np.diff(t)
+    return [[float(t[i]), float(dt[i])] for i in np.flatnonzero(dt > GAP_S)]
 
 
 @dataclass
@@ -289,7 +311,9 @@ def build_run(con, run: str, data_root: Path, out: Path, base: dict) -> RunCase:
     With two active GRs the config is the coupled one; with one, it is the
     single-circuit config of that GR. Signals come from the Overview when it
     records every active GR, otherwise from the pupitre (the reference is
-    then the measured current).
+    then the measured current). When the overview records list Archive
+    files, the 120 Hz measured current and voltage are also written, on the
+    same window and time 0; the config does not use them.
 
     Parameters
     ----------
@@ -324,7 +348,7 @@ def build_run(con, run: str, data_root: Path, out: Path, base: dict) -> RunCase:
               if pup[list(PUPITRE_CURRENT[gr])].sum(axis=1).max() > ACTIVE_CURRENT_A]
     ov_names = [n for r in records for n in r[1]]
 
-    ov = read_overview([data_root / files[n] for n in ov_names]) if ov_names else None
+    ov = read_pigbrother([data_root / files[n] for n in ov_names]) if ov_names else None
     use_overview = ov is not None and all(ov[f"I_{gr}"].notna().any() for gr in active)
     if use_overview:
         ov = ov.dropna(subset=[f"I_{gr}" for gr in active])
@@ -362,6 +386,27 @@ def build_run(con, run: str, data_root: Path, out: Path, base: dict) -> RunCase:
         ]
         circuits.append(circuit)
 
+    # Archives: those of the overview records, plus those the DB does not link
+    # to a record but that start inside the window (continuation files).
+    arc_linked = [n for r in records for n in r[2]]
+    arc_start = _archive_starts(files)
+    arc_window = sorted(n for n, s in arc_start.items()
+                        if t0 - pd.Timedelta(minutes=1) <= s <= t1 and n not in arc_linked)
+    arc_names = arc_linked + arc_window
+    arc_span, arc_gaps = None, []
+    if arc_names:
+        arc = read_pigbrother([data_root / files[n] for n in arc_names])
+        arc = arc.dropna(subset=[f"I_{gr}" for gr in active])
+        arc = arc[(arc.utc >= t0) & (arc.utc <= t1)]
+        if len(arc):
+            t_arc = (arc.utc - t0).dt.total_seconds().to_numpy()
+            for gr in active:
+                write_series(out / f"{tag}_archive_I_{gr}.csv", t_arc, arc[f"I_{gr}"].to_numpy(),
+                             "current", ARCHIVE_FLOAT_FORMAT)
+                write_series(out / f"{tag}_archive_U_{gr}.csv", t_arc, arc[f"U_{gr}"].to_numpy(),
+                             "voltage", ARCHIVE_FLOAT_FORMAT)
+            arc_span, arc_gaps = [float(t_arc[0]), float(t_arc[-1])], _gaps(t_arc)
+
     if len(circuits) == 2:
         config = {"name": f"M9_M23072801_{tag}", "circuits": circuits,
                   "mutual_inductances": base["mutual_inductances"]}
@@ -372,20 +417,22 @@ def build_run(con, run: str, data_root: Path, out: Path, base: dict) -> RunCase:
     (out / config_name).write_text(json.dumps(config, indent=2, ensure_ascii=False) + "\n")
 
     time_end = float(np.floor(t[-1]))
-    dt = np.diff(t)
-    gaps = [[float(t[i]), float(dt[i])] for i in np.flatnonzero(dt > GAP_S)]
+    gaps = _gaps(t)
     sources = {
         "pupitre": files[f"{run}.txt"],
         "overview_records": [r[0] for r in records],
         "modes": sorted({r[4] for r in records}),
         "overview": [files[n] for n in ov_names],
         "archive": [files.get(n, n) for r in records for n in r[2]],
+        "archive_from_window": [files[n] for n in arc_window],  # not linked to a record in the DB
         "default": [files.get(n, n) for r in records for n in r[3]],
         "spike": [files.get(n, n) for r in records for n in (r[5] or [])],
         "window_utc": [str(t0), str(t1)],
         "active_groups": active,
         "signals_from": "overview" if use_overview else "pupitre (reference = measured current)",
         "gaps_s": gaps,  # [t_start, length] of holes > GAP_S, linearly interpolated
+        "archive_span_s": arc_span,  # [first, last] Archive sample in the window, None if no Archive
+        "archive_gaps_s": arc_gaps,  # holes > GAP_S in the Archive files, not interpolated
         "tin_reconstruction": {"method": "taut string in +/- q/2 band, free ends",
                                "half_band_K": tin_delta},
     }
@@ -412,7 +459,7 @@ def command(group: Group, case: RunCase) -> str:
 
 
 def _notes(case: RunCase) -> str:
-    """Return the README notes of a run: non-zero start, gaps."""
+    """Return the README notes of a run: non-zero start, gaps, partial Archive."""
     notes = []
     if any(abs(v) > ACTIVE_CURRENT_A for v in case.value_start):
         notes.append("starts at " + " / ".join(f"{v:.0f} A" for v in case.value_start)
@@ -421,6 +468,14 @@ def _notes(case: RunCase) -> str:
         longest = max(g[1] for g in case.sources["gaps_s"])
         notes.append(f"{len(case.sources['gaps_s'])} gaps > {GAP_S:g} s (max {longest:.0f} s), "
                      "interpolated")
+    if case.sources["archive_from_window"]:
+        notes.append(f"{len(case.sources['archive_from_window'])} Archive(s) found by time, "
+                     "not linked in the DB")
+    span = case.sources["archive_span_s"]
+    if span and (span[0] > 1.0 or span[1] < case.time_end - 1.0):
+        notes.append(f"Archive covers {span[0]:.0f}-{span[1]:.0f} s only")
+    if case.sources["archive_gaps_s"]:
+        notes.append(f"{len(case.sources['archive_gaps_s'])} Archive gaps > {GAP_S:g} s")
     return "; ".join(notes)
 
 
@@ -464,6 +519,17 @@ Signals = `overview` (1 Hz pigbrother):
 Signals = `pupitre` (no usable Overview): reference and measured current are
 both `Idcct1 + Idcct2` (GR1) or `Idcct3 + Idcct4` (GR2); voltage is
 `Ucoil1..14` (GR1) or `Ucoil15 + Ucoil16` (GR2).
+
+Archive (120 Hz pigbrother), when the run has one:
+
+- `<tag>_archive_{{I,U}}_GR*.csv`: same channels as the Overview measured
+  files, same window and time 0. The Archive files of a run are the
+  `sources_archive` of its overview records in the DB (`archive`), plus the
+  DB Archive files whose name time falls in the window but that no record
+  links (`archive_from_window`, e.g. 5 h continuation files). The configs do not
+  use them (for L identification and Default events). Covered span and
+  holes (not interpolated) per run in `provenance.json` (`archive_span_s`,
+  `archive_gaps_s`).
 
 Always:
 
