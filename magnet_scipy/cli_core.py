@@ -25,7 +25,7 @@ class TimeParameters:
     start: float
     end: float
     step: float
-    method: str = "RK45"
+    method: str = "LSODA"
     
     def __post_init__(self):
         if self.start >= self.end:
@@ -130,7 +130,7 @@ class ArgumentParser:
             "--method",
             type=str,
             choices=["RK45", "RK23", "DOP853", "Radau", "BDF", "LSODA"],
-            default="RK45",
+            default="LSODA",
             help="ODE solver method",
         )
     

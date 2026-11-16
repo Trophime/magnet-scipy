@@ -34,7 +34,7 @@ class SimulationParameters:
     t_start: float
     t_end: float
     dt: float
-    method: str = "RK45"
+    method: str = "LSODA"
     rtol: float = 1e-6
     atol: float = 1e-9
     initial_values: Optional[List[float]] = None

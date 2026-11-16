@@ -177,7 +177,7 @@ The applied voltage is not a state; it is reconstructed after the solve from the
 
 The ODE system of section 3 is solved with `scipy.integrate.solve_ivp`:
 
-- **Solver**: adaptive method selected by `--method` (default `RK45`, Dormand–Prince); `Radau`, `BDF` or `LSODA` for stiff cases
+- **Solver**: adaptive method selected by `--method` (default `LSODA`, which switches automatically between Adams for non-stiff and BDF for stiff phases); also the implicit `Radau` and `BDF`, and the explicit `RK45` (Dormand–Prince), `RK23` and `DOP853`, which are stability-limited on the stiff PID cases
 - **Error Control**: the solver's internal **step-size controller**, driven by `rtol` (default 1e-6) and `atol` (default 1e-9). It is unrelated to the physical PID controller.
 - **Maximum step**: `max_step = dt`, which also keeps the integrator from stepping over the discontinuities caused by gain scheduling and by the piecewise-linear reference
 - **Initial Conditions**: `y₀ = [i₀, 0]` (initial current, zero integral error)

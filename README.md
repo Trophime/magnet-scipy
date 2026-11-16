@@ -159,7 +159,7 @@ magnet-scipy --config-file CONFIG_FILE [OPTIONS]
 --time-end FLOAT            # Simulation end time (default: 5.0) 
 --time-step FLOAT           # Maximum solver step, passed as max_step to solve_ivp (default: 0.001)
                             # The solver is adaptive: actual steps may be smaller
---method {RK45,RK23,DOP853,Radau,BDF,LSODA}  # ODE solver method
+--method {RK45,RK23,DOP853,Radau,BDF,LSODA}  # ODE solver method (default: LSODA)
 
 # Initial conditions
 --value-start FLOAT         # Initial current value in Amperes (default: 0.0)
@@ -221,7 +221,7 @@ magnet-scipy-coupled --config-file CONFIG_FILE [OPTIONS]
 --time-start FLOAT
 --time-end FLOAT
 --time-step FLOAT
---method {RK45,RK23,DOP853,Radau,BDF,LSODA}
+--method {RK45,RK23,DOP853,Radau,BDF,LSODA}  # default: LSODA
 
 # Initial conditions
 --value-start FLOAT [FLOAT ...]  # Initial current values (one per circuit)
