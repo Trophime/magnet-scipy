@@ -30,9 +30,12 @@ rather than gradual rounding.
 ## Topology: a graph, not a ring
 
 The loop is a small directed graph of pipe segments and junctions, not a single
-closed curve: a header splits into the magnet branches (and the derivation
-take-off) in parallel, they remerge into one pipe to the exchanger, and the return
-pipe splits again to feed each magnet's inlet.
+closed curve: the exchanger's cold outlet splits into the magnet branches (one
+pump each) and two parallel converter-derivation circuits (one per Graetz group,
+fixed flow each); the magnet outlets merge first into the hot header (`Tout`
+sensor), the derivation outlets merge (`Talim` = pupitre `Talimout`) and join
+downstream of `Tout`, and the header
+feeds the exchanger hot inlet. See the topology section of `cooling_model.md`.
 
 - **`TransportSegment`**: a passive pipe run between two nodes, characterized only
   by its volume `V` (m³) — pure plug-flow advection, no source term. Optional (off
@@ -48,12 +51,14 @@ pipe splits again to feed each magnet's inlet.
 - **Split nodes**: the arriving temperature propagates unchanged into every
   downstream segment; each then applies its own transit delay independently.
 - **Exchanger node**: boundary condition via the tier-1 calorimetric balance,
-  `T_out = T_mix_arriving − Q_hx(t)/(ρ·Cp·Flow_primary_total(t))`.
+  `T_out = T_hx_in_arriving − Q_hx(t)/(ρ·Cp·Flow_primary_total(t))`.
 
-A concrete instance of this graph for the 2-magnet schematic: `header → (magnet_1
-segment, magnet_2 segment, derivation segment)` in parallel, `merge → exchanger
-segment`, `exchanger → return_header`, `return_header → (magnet_1 inlet, magnet_2
-inlet)`.
+A concrete instance of this graph for the 2-magnet schematic: `exchanger cold
+outlet → supply split → (magnet_1 inlet segment, magnet_2 inlet segment,
+graetz_A1A2 segment, graetz_A3A4 segment)` in parallel; `(magnet_1, magnet_2) →
+magnet merge [Tout]`; `(graetz_A1A2, graetz_A3A4) → derivation merge [Talim]`;
+`(magnet merge, derivation merge) → hot-header merge → exchanger segment →
+exchanger`.
 
 ## The node method: transit delay from time-varying flow
 
