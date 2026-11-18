@@ -52,8 +52,16 @@ Secondary (blue): Teb, Flow ─► HX ─► Tsb
 - `Tout` (pupitre) sees **only the magnet branches**: the converter return joins
   the hot header *downstream* of the `Tout` sensor, just before the exchanger.
 - `Talim` (pupitre `Talimout`) is the **outlet temperature of the converter
-  derivation** (assumed measured after the two group circuits merge), not a loop
+  derivation**, measured on the collector after the two group circuits merge
+  (single sensor; "Auxiliary pumps configuration" synoptic), not a loop
   supply/return temperature.
+- The derivation has **its own pumps** PA1–PA3 (two on duty, one standby; the
+  crossover valves VA9/VA10 let PA3 feed either group), drawing from the main
+  heat exchanger cold outlet and returning upstream of its hot inlet. Within a
+  group the two supplies (A1‖A2, A3‖A4) are in parallel. No flowmeter: total
+  flow ≈ 30 l/s (`P_alim/(ρ·Cp·(Talim − Tin))` gives 25–26 l/s on M9 2024.07.15,
+  33–38 l/s on M9 2026.10.02, 32–34 l/s on M10 2026.09.21; python_magnetcooling
+  uses 60 m³/h per circuit = 33 l/s in total).
 - `HPi − BP` gives each magnet's pressure drop — an independent hydraulic check on
   `Flow_i` (not modeled here; see `flow_params_check.md` / `flow_probe_faults.md`).
 
@@ -112,22 +120,36 @@ What each pigbrother group can and cannot give (Overview and Stats are 1 Hz):
 | AC/DC | `Tensions_Alimentations`, `Puissances` | converter DC output voltage / power (`Puissance_A = Tension_A·Courant_A`) | DC power delivered per converter |
 | Magnet | `Courants_Alimentations`, `Tensions_Aimant` | GR currents, magnet voltages | magnet power `P_H = ALL_internes·I_GR1`, `P_B = ALL_externes·I_GR2` |
 
-Heat-source options for derivation branch `g`, in order of preference:
+The derivation also cools the **transformers** (water/oil exchangers on this
+circuit), and the pupitre `Ptot` is measured upstream of them. `Ptot` also
+includes the two magnet pumps (confirmed by pump-speed steps at constant
+current, M9 2026.09.04: ≈ 0.023 MW per pump per (1000 rpm)³, ≈ 0.95 MW for both
+at full field). So `P_alim = Ptot − ΣPuissance_A − P_pumps` = transformer +
+converter losses, all of which end up in this water: about 1–1.2 MW at full
+field (5–7 % of the DC power), giving the ≈ 30 l/s above. The bridge conduction
+losses alone are only ~0.15 MW.
 
-1. **Bridge loss model** from `Courants_ponts`: each 6-pulse bridge always has two
-   thyristors in series, so
-   `Q_g(t) = Σ_{p∈g} 2·(V_T0·I_p + r_T·I_p²) + Q_g,0`,
-   with `V_T0`, `r_T` (datasheet values or fitted) and an idle term `Q_g,0`. Fit
-   against the measured converter heat `ρ·Cp·Flow_conv·(TAlimout − Tin)` once the
-   fixed flows are known. Order of magnitude at 28 kA / 26 kA (V_T0 ≈ 1 V,
-   r_T ≈ 0.1 mΩ): ~0.15 MW for the 16 bridges.
-2. **Fraction of delivered power** `Q_g = k_g·(Puissance_Ag1 + Puissance_Ag2)` —
-   the fallback when no bridge currents are available (pupitre-only runs, e.g. C8).
-3. **AC − DC balance** `P1_HTg − ΣPuissance_A` — upper bound only, includes
-   transformer and filter losses that are probably not in this water circuit.
+Heat-source options for the derivation, in order of preference:
 
-`examples/energy_balance.py` implements options 1 (with `--vt0`/`--rt`), the busbar
-term, the pump terms, and the `Tout` / `TAlimout` estimates for one run.
+1. **Measured total** `P_alim = Ptot − ΣPuissance_A − P_pumps` (pupitre `Ptot`,
+   pigbrother `Puissance_A`, pump rpm³ estimate), for the two groups together,
+   which is all `Talim` can check.
+   Invalid where `Ptot` was not recorded (tag `check:ptot_notrecorded`).
+2. **Loss model** split per group: bridge conduction losses from `Courants_ponts`,
+   `Σ_{p∈g} 2·(V_T0·I_p + r_T·I_p²)` (each 6-pulse bridge always has two thyristors
+   in series; ~0.15 MW for the 16 bridges at 28 kA / 26 kA with V_T0 ≈ 1 V,
+   r_T ≈ 0.1 mΩ), **plus transformer losses** (no-load + load terms, still to be
+   modelled), fitted against option 1.
+3. **Fraction of delivered power** `Q_g = k_g·(Puissance_Ag1 + Puissance_Ag2)` —
+   the fallback when no pigbrother data are available (pupitre-only runs, e.g. C8);
+   `k ≈ 0.05–0.07` overall from option 1.
+
+The Stats-file AC power (`P1_HTg − ΣPuissance_A`) is not usable: offsets and jumps
+(see the table above).
+
+`examples/energy_balance.py` computes option 1 (`P_alim`), the bridge part of
+option 2 (`P_conv`, with `--vt0`/`--rt`), the busbar term, the pump terms, and the
+`Tout` / `TAlimout` estimates for one run.
 
 DC busbar losses between converter and magnet are measurable and clean:
 `(Tension_A − U_magnet)·I`, ≈ 0.21 MW (GR1) and 0.13 MW (GR2) at full field.
@@ -388,14 +410,15 @@ cases, `pytest.mark.unit`, one `Test*` class per feature):
 - Derivation heat fraction `k_g`: confirmed as "fraction of magnet power"
   (`Q_conv_g = k_g · P_g`) rather than a lookup table or direct exogenous
   input — a reasonable starting proxy, refine once real converter loss data exists.
-- Derivation flows: confirmed **fixed**, not tied to magnet current. Values still
-  to be supplied (one per group circuit).
+- Derivation flows: confirmed **fixed**, not tied to magnet current: ≈ 30 l/s in
+  total (not measured, inferred per run; split between the two group circuits
+  unknown; whether it really changes between runs is open).
 - Derivation: confirmed as **two parallel circuits, one per Graetz group** (A1/A2,
   A3/A4), whose combined outlet is `Talim` (pupitre `Talimout`), returning to the
   hot header downstream of `Tout`, before the HX.
-- To confirm: which magnet(s) each group powers (example assumes A1/A2 → magnet_1,
-  A3/A4 → magnet_2), and that `Talimout` is measured after the two group circuits
-  merge (no per-group outlet sensor).
+- Which magnet each group powers follows the housing wiring (M9: A1/A2 → insert,
+  A3/A4 → Bitters; M8/M10 the reverse). `Talimout` is confirmed measured after the
+  two group circuits merge (no per-group outlet sensor).
 - Model purpose: confirmed calorimetry-first, doubling as both sensor-checking and
   (secondarily) predictive `Tin` for `R(I,Tin)`.
 - Not yet decided: exact `k_g` values (identifiable from `Talim`/`Tin`, the fixed

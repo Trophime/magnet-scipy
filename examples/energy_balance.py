@@ -22,11 +22,14 @@ Terms, per steady plateau and integrated over the run:
   in series). ``V_T0`` and ``r_T`` are model parameters, not measurements;
 - pumps: hydraulic power dissipated between the HP and BP taps,
   ``sum (HP_i - BP) * Flow_i`` (measured), and an electrical estimate
-  ``c * (Rpm1**3 + Rpm2**3)`` (``c`` from a regression on the HT1 feeder);
-- power supplies from the pupitre ``Ptot``:
-  ``P_alim = Ptot - P_magnets - P_busbars`` (``- P_pumps`` with
-  ``--ptot-includes-pumps``). ``Ptot`` is 0 at rest while the pumps run at
-  1000 rpm, so by default it is taken as excluding the pumps.
+  ``c * (Rpm1**3 + Rpm2**3)``; ``c`` ≈ 0.023 MW per pump per (1000 rpm)**3
+  from pump-speed steps at constant current (M9 2026.09.04: Rpm2
+  2247 -> 2780 -> 1535 moves ``Ptot - Pmagnet`` by +0.25 / -0.16 MW);
+- power supplies (transformers + converters) from the pupitre ``Ptot``,
+  which includes the magnet pumps (same pump-speed steps):
+  ``P_alim = Ptot - P_magnets - P_busbars - P_pumps``
+  (``--no-ptot-includes-pumps`` drops the pump term). ``Ptot`` is only
+  computed while the supplies run (0 at rest, whatever the pump speed).
 
 Temperatures:
 
@@ -34,15 +37,24 @@ Temperatures:
   with ``Tin = (Tin1 + Tin2) / 2`` (both sensors see the same exchanger
   outlet water; their ~0.5 K difference is a sensor offset, so they are not
   flow-weighted), optionally delayed and low-pass filtered;
-- ``TAlimout`` estimate: ``Tin + P_converters / (rho*cp*Flow_conv)``, only when
-  the converter cooling flow is given; otherwise the flow that would close the
-  balance is reported.
+- ``TAlimout`` estimate: ``Tin + P_converters / (rho*cp*Flow_conv)`` with
+  the bridge losses only (it stays far below the measurement: the circuit
+  also takes the transformer losses); the flow that closes the balance with
+  the measured ``P_alim``, ``P_alim / (rho*cp*(TAlimout - Tin))``, is also
+  reported.
+
+``Flow_conv`` is the total flow of the power-supply cooling circuits (own
+pumps PA1-PA3, two parallel circuits A1/A2 and A3/A4, no flowmeter): drawn
+at the main heat exchanger cold outlet and returned upstream of its hot
+inlet. Default 30 l/s: the implied flow is 26-35 l/s on M9 plateaus, and
+python_magnetcooling's ``debit_alim`` is 60 m3/h per circuit (2 x 60 m3/h =
+33 l/s).
 
 Heat exchanger:
 
 - hot (primary) side, from the pupitre: inlet is ``Tout`` mixed with the
-  power-supply return ``TAlimout`` (weight ``Flow_conv``, 0 when not given),
-  outlet is ``Tin``; ``Q_hot = rho*cp*(Flow1 + Flow2 + Flow_conv)*(T_in - T_out)``;
+  power-supply return ``TAlimout`` (weight ``Flow_conv``), outlet is
+  ``Tin``; ``Q_hot = rho*cp*(Flow1 + Flow2 + Flow_conv)*(T_in - T_out)``;
 - hot side, from SUPERVISION (``--bdd``): same formula with ``ted`` in place
   of ``Tout`` and ``tsd`` in place of ``Tin`` (same measurement points, other
   sensors); ``ted - Tout`` and ``tsd - Tin`` are reported as sensor checks;
@@ -329,7 +341,7 @@ def energy_balance(
     delay: float,
     tau: float,
     talim_tau: float,
-    ptot_pumps: bool = False,
+    ptot_pumps: bool = True,
 ) -> pd.DataFrame:
     """Compute power terms and temperature estimates on the merged 1 s grid.
 
@@ -355,8 +367,8 @@ def energy_balance(
     talim_tau : float
         Time constant of the ``TAlimout`` estimate [s].
     ptot_pumps : bool, optional
-        Whether the pupitre ``Ptot`` includes the pumps; if so, ``P_pump_el``
-        is subtracted from it to get ``P_alim``.
+        Whether the pupitre ``Ptot`` includes the magnet pumps (default:
+        True); if so, ``P_pump_el`` is subtracted from it to get ``P_alim``.
 
     Returns
     -------
@@ -366,8 +378,9 @@ def energy_balance(
         from ``Ptot`` ``P_alim``, ``Pmagnet_pupitre`` and
         ``Ptot_pupitre`` [MW], temperatures [°C] (``Tin``, ``Tout``,
         ``Tout_est``, ``TAlimout``, ``TAlim_est``), calorimetric ratio
-        ``k_cal`` [-], the converter flow closing the ``TAlimout`` balance
-        ``F_conv_implied`` [l/s], and the heat exchanger terms [MW]
+        ``k_cal`` [-], the power-supply cooling flow closing the ``TAlimout``
+        balance with ``P_alim`` ``F_alim_implied`` [l/s], and the heat
+        exchanger terms [MW]
         ``Q_hx_hot`` (pupitre), ``Q_hx_hot_bdd`` (SUPERVISION ``ted``/``tsd``,
         NaN without ``bdd_*`` columns) and ``Q_hx_cold``, with the sensor
         checks ``dT_ted`` = ``ted - Tout`` and ``dT_tsd`` = ``tsd - Tin`` [K].
@@ -403,7 +416,7 @@ def energy_balance(
     out["Tin"], out["Tout"], out["TAlimout"] = tin, df.Tout, df.TAlimout
     out["Tout_est"] = low_pass(tin + heat * 1e6 / (RHO_CP * flow), delay, tau)
     out["k_cal"] = RHO_CP * flow * (df.Tout - tin) / (heat * 1e6)
-    out["F_conv_implied"] = 1e3 * out.P_conv * 1e6 / (RHO_CP * (df.TAlimout - tin))
+    out["F_alim_implied"] = 1e3 * out.P_alim * 1e6 / (RHO_CP * (df.TAlimout - tin))
     out["TAlim_est"] = (
         low_pass(tin + out.P_conv * 1e6 / (RHO_CP * conv_flow / 1e3), 0, talim_tau)
         if conv_flow
@@ -502,7 +515,7 @@ def summarize(bal: pd.DataFrame, settle: int = 120) -> pd.DataFrame:
             "k_cal": s.k_cal,
             "TAlim": s.TAlimout,
             "TAlim_est": s.TAlim_est,
-            "F_conv_impl[l/s]": s.F_conv_implied,
+            "F_alim_impl[l/s]": s.F_alim_implied,
             "Ptot": s.Ptot_pupitre,
             "Q_hot": s.Q_hx_hot,
             "Q_hot_bdd": s.Q_hx_hot_bdd,
@@ -579,14 +592,15 @@ def main() -> None:
     ap.add_argument(
         "--pump-coef",
         type=float,
-        default=0.0267,
-        help="pump electrical power at 1000 rpm, per pump [MW] (default: 0.0267)",
+        default=0.023,
+        help="pump electrical power at 1000 rpm, per pump [MW] (default: 0.023)",
     )
     ap.add_argument(
         "--conv-flow",
         type=float,
-        default=None,
-        help="total converter cooling flow [l/s]; enables the TAlimout estimate",
+        default=30.0,
+        help="total power-supply cooling flow [l/s] (default: 30); 0 leaves the "
+        "branch out of the heat exchanger balance and disables the TAlimout estimate",
     )
     ap.add_argument(
         "--delay", type=float, default=0.0, help="Tout transport delay [s] (default: 0)"
@@ -619,8 +633,10 @@ def main() -> None:
     )
     ap.add_argument(
         "--ptot-includes-pumps",
-        action="store_true",
-        help="subtract the pump estimate from Ptot to get P_alim",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Ptot includes the magnet pumps: subtract the pump estimate to get "
+        "P_alim (default: on)",
     )
     ap.add_argument("--csv", type=Path, help="write the 1 s balance to this CSV")
     ap.add_argument("--plot", type=Path, help="save a figure to this file")
@@ -702,7 +718,7 @@ def main() -> None:
             "k_cal",
             "TAlim",
             "TAlim_est",
-            "F_conv_impl[l/s]",
+            "F_alim_impl[l/s]",
         ],
         "heat exchanger [MW], sensor checks [K]": [
             "P_mag",

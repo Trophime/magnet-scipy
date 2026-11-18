@@ -47,20 +47,20 @@ are averaged to 1 s. Requires `numpy`, `pandas`, `nptdms`, `duckdb` for
 |---|---|---|
 | `--vt0` | `1.0` | Thyristor threshold voltage [V] of the bridge loss model |
 | `--rt` | `1e-4` | Thyristor slope resistance [Ω] of the bridge loss model |
-| `--pump-coef` | `0.0267` | Electrical power of one pump at 1000 rpm [MW], scaled as rpm³ |
-| `--conv-flow` | none | Total cooling flow of the power-supply circuits [l/s]; enables the `TAlimout` estimate |
+| `--pump-coef` | `0.023` | Electrical power of one magnet pump at 1000 rpm [MW], scaled as rpm³ |
+| `--conv-flow` | `30` | Total cooling flow of the power-supply circuits [l/s]; `0` leaves the branch out of the heat exchanger balance and disables the `TAlimout` estimate |
 | `--delay` | `0` | Transport delay applied to the `Tout` estimate [s] |
 | `--tau` | `0` | First-order time constant of the `Tout` estimate [s] |
 | `--talim-tau` | `0` | First-order time constant of the `TAlimout` estimate [s] |
 | `--max-lag` | `120` | Search range of the pupitre/pigbrother time offset [s] |
 | `--bdd` | none | SUPERVISION `bdd.csv` export; adds `ted`/`tsd` and finer `teb`/`tsb` to the heat exchanger balance |
 | `--housing` | `M9` | Housing (`M5`, `M7`, `M8`, `M9`, `M10`): which magnet each supply group feeds |
-| `--ptot-includes-pumps` | off | Subtract `P_pump_el` from `Ptot` when computing `P_alim` |
+| `--ptot-includes-pumps` / `--no-ptot-includes-pumps` | on | `Ptot` includes the magnet pumps: subtract `P_pump_el` from it when computing `P_alim` |
 | `--csv` | none | Write the 1 s balance to this CSV file |
 | `--plot` | none | Save a figure (powers, `Tout`, `TAlimout`) to this file |
 
-`--vt0`, `--rt` and `--pump-coef` are model parameters, not measured values:
-the defaults are placeholders (see [Limitations](#limitations)). `--delay 22
+`--vt0`, `--rt`, `--pump-coef` and `--conv-flow` are model parameters, not
+measured values (see [Limitations](#limitations)). `--delay 22
 --tau 19` are the `Tout` dynamics found on M9 run 2023.09.16 (22 s transport,
 19 s first-order).
 
@@ -76,7 +76,7 @@ the defaults are placeholders (see [Limitations](#limitations)). `--delay 22
 | pupitre | `Flow1`, `Flow2` [l/s], `HP1`, `HP2`, `BP` [bar], `Rpm1`, `Rpm2` | hydraulics of the two magnet branches |
 | pupitre | `Pmagnet` [MW], `Idcct1..4` [A] | time alignment, group on/off detection |
 | pupitre | `teb`, `tsb` [°C], `debitbrut` [m³/h] | river-water (cold) side of the exchanger |
-| pupitre | `Ptot` [MW] | `Pmagnet` + pump power + other loads, for comparison |
+| pupitre | `Ptot` [MW] | `Pmagnet` + busbars + magnet pumps + power supplies (transformers, converters); only computed while the supplies run |
 | SUPERVISION | `teb`, `tsb` [°C] | river-water side in/out (same as pupitre, finer resolution) |
 | SUPERVISION | `ted`, `tsd` [°C] | primary side, same points as `Tout` and `Tin`; second sensor pair |
 
@@ -106,15 +106,15 @@ All powers are in MW, on a 1 s UTC grid.
 |---|---|---|
 | Magnets `P_magnet` | `ALL_internes·I_insert + ALL_externes·I_Bitter`, currents `Courant_GR1`/`Courant_GR2` per the housing wiring; pigbrother equivalent of the pupitre `Pmagnet` (`= Σ Ucoil_k·Icoil_k`) | measured |
 | Busbars `P_busbar_GRx` | `Puissance_Ax + Puissance_Ay − P_magnet` of the magnet that group feeds (`Puissance_A = Tension_A·Courant_A`) | measured |
-| Power supplies `P_alim` | `Ptot − P_magnet − P_busbar_GR1 − P_busbar_GR2` (`− P_pump_el` with `--ptot-includes-pumps`), i.e. `Ptot − Σ Puissance_A` | derived |
+| Power supplies `P_alim` | `Ptot − P_magnet − P_busbar_GR1 − P_busbar_GR2 − P_pump_el`, i.e. `Ptot − Σ Puissance_A − P_pump_el` (no pump term with `--no-ptot-includes-pumps`): transformer + converter losses | derived |
 | Power supplies `P_conv` | `Σ_bridges 2·(V_T0·I_p + r_T·I_p²)` — two thyristors always conduct in series in a Graetz bridge | model |
 | Pumps, hydraulic `P_hyd` | `Σ_i (HP_i − BP)·Flow_i`: flow work dissipated by friction between the HP and BP taps, i.e. in the magnets | measured |
-| Pumps, electrical `P_pump_el` | `pump_coef·((Rpm1/1000)³ + (Rpm2/1000)³)` | estimate |
+| Pumps, electrical `P_pump_el` | `pump_coef·((Rpm1/1000)³ + (Rpm2/1000)³)`, magnet pumps only | estimate |
 | `Tout_est` | `Tin + (P_magnet + P_hyd)/(ρcp·(Flow1 + Flow2))`, then delay and first-order lag | estimate |
 | `k_cal` | `ρcp·(Flow1 + Flow2)·(Tout − Tin)/(P_magnet + P_hyd)`: fraction of the heat seen by the water | measured |
-| `TAlim_est` | `Tin + P_conv/(ρcp·Flow_conv)`, only with `--conv-flow` | estimate |
-| `F_conv_implied` | `P_conv/(ρcp·(TAlimout − Tin))` [l/s]: power-supply cooling flow that closes the balance | derived |
-| `Q_hx_hot` | `ρcp·(F_mag·(Tout − Tin) + F_conv·(TAlimout − Tin))`, `F_mag = Flow1 + Flow2`, `F_conv` = `--conv-flow` or 0 | measured (pupitre) |
+| `TAlim_est` | `Tin + P_conv/(ρcp·Flow_conv)`, bridge losses only (disabled with `--conv-flow 0`) | estimate |
+| `F_alim_implied` | `P_alim/(ρcp·(TAlimout − Tin))` [l/s]: power-supply cooling flow that closes the balance with the measured losses | derived |
+| `Q_hx_hot` | `ρcp·(F_mag·(Tout − Tin) + F_conv·(TAlimout − Tin))`, `F_mag = Flow1 + Flow2`, `F_conv` = `--conv-flow` | measured (pupitre) |
 | `Q_hx_hot_bdd` | same with `ted` for `Tout` and `tsd` for `Tin`, only with `--bdd` | measured (SUPERVISION) |
 | `Q_hx_cold` | `ρcp·debitbrut/3600·(tsb − teb)`, `debitbrut` = river-water flow [m³/h]; `teb`/`tsb` from SUPERVISION when given, pupitre otherwise | measured |
 | `dT_ted`, `dT_tsd` | `ted − Tout`, `tsd − Tin`: agreement of the two sensor pairs [K], only with `--bdd` | sensor check |
@@ -141,8 +141,8 @@ current build (e.g. calcul22).
 
 **Heat exchanger topology.** The hot side receives the magnet return
 (`Tout`, measured downstream of the magnets only) and the power-supply
-cooling return (`TAlimout`, fixed flow, joining before the exchanger); both
-leave at `Tin`. The cold side is river water: `teb` in, `tsb` out, flow
+cooling return (`TAlimout`, fixed flow of its own pumps, joining before the
+exchanger); both leave at `Tin`. The cold side is river water: `teb` in, `tsb` out, flow
 `debitbrut`.
 
 ### Output
@@ -160,30 +160,29 @@ leave at `Tin`. The cold side is river water: `teb` in, `tsb` out, flow
   measured vs estimated (with `Tin` on both temperature panels), and the heat
   exchanger hot and cold sides against `P_magnet` and `Ptot`.
 
-Power split per plateau [MW]:
+Power split per plateau, default options [MW]:
 
-| Run | `P_mag` | `P_pup` | `P_bus_GR1` | `P_bus_GR2` | `P_pump_el` | `Ptot` | `P_alim` |
-|---|---|---|---|---|---|---|---|
-| M9 2024.07.15 | 21.77 | 21.64 | 0.21 | 0.13 | 1.10 | 24.09 | 1.98 |
-| M9 2026.10.02 | 20.08 | 19.97 | 0.23 | 0.07 | 0.94 | 22.42 | 2.04 |
-| M10 2026.09.21 (`--housing M10`) | 17.70 | 17.66 | 0.13 (Bitters) | 0.20 (insert) | 1.11 | 20.16 | 2.15 |
+| Run | `P_mag` | `P_pup` | `P_bus_GR1` | `P_bus_GR2` | `P_pump_el` | `Ptot` | `P_alim` | `F_alim_impl` |
+|---|---|---|---|---|---|---|---|---|
+| M9 2024.07.15 | 21.77 | 21.64 | 0.21 | 0.13 | 0.95 | 24.09 | 1.03 | 26.0 l/s |
+| M9 2026.10.02 | 20.08 | 19.97 | 0.23 | 0.07 | 0.81 | 22.42 | 1.23 | 33.2 l/s |
+| M10 2026.09.21 (`--housing M10`) | 17.70 | 17.66 | 0.13 (Bitters) | 0.20 (insert) | 0.96 | 20.16 | 1.19 | 32.5 l/s |
 
-With `--ptot-includes-pumps`, `P_alim` drops by `P_pump_el` (0.94 MW on
-the 2026.10.02 row: 1.10 MW instead of 2.04). The M10 `P_pump_el` uses the
-M9 pump coefficient and is only indicative.
+The M10 `P_pump_el` uses the M9 pump coefficient and is only indicative.
 
 Example, M9 run 2024.07.15, first plateau (Overview, `--delay 22 --tau 19`):
 
-| `P_mag` | `P_bus_GR1` | `P_bus_GR2` | `P_conv` | `P_hyd` | `P_pump_el` | `Tout` | `Tout_est` | `k_cal` | `TAlim` | `F_conv_impl` |
-|---|---|---|---|---|---|---|---|---|---|---|
-| 21.77 | 0.21 | 0.13 | 0.15 | 0.48 | 1.10 | 39.9 °C | 42.4 °C | 0.89 | 30.0 °C | 3.7 l/s |
+| `P_mag` | `P_conv` | `P_hyd` | `P_pump_el` | `Tout` | `Tout_est` | `k_cal` | `TAlim` | `TAlim_est` | `F_alim_impl` |
+|---|---|---|---|---|---|---|---|---|---|
+| 21.77 | 0.15 | 0.48 | 0.95 | 39.9 °C | 42.4 °C | 0.89 | 30.0 °C | 21.6 °C | 26.0 l/s |
 
-Heat exchanger, M9 run 2026.10.02 with `--bdd`, two plateaus [MW, K]:
+Heat exchanger, M9 run 2026.10.02 with `--bdd`, default options (branch at
+30 l/s), two plateaus [MW, K]:
 
 | `P_mag` | `Ptot` | `Q_hot` | `Q_hot_bdd` | `Q_cold` | `cold/hot` | `ted-Tout` | `tsd-Tin` |
 |---|---|---|---|---|---|---|---|
-| 15.67 | 17.71 | 14.23 | 13.95 | 20.64 | 1.45 | −0.37 | −0.05 |
-| 20.08 | 22.42 | 18.12 | 17.75 | 25.77 | 1.42 | −0.42 | −0.04 |
+| 15.67 | 17.71 | 15.18 | 14.91 | 20.64 | 1.36 | −0.37 | −0.05 |
+| 20.08 | 22.42 | 19.23 | 18.87 | 25.77 | 1.34 | −0.42 | −0.04 |
 
 ### Limitations
 
@@ -192,27 +191,29 @@ Heat exchanger, M9 run 2026.10.02 with `--bdd`, two plateaus [MW, K]:
   at 3–9 MW. `Tout_est` is therefore 1–2.5 K above the measured `Tout`. The
   data fit `ΔT_measured ≈ 0.90·ΔT_true − 0.3 K`; whether the gain comes from
   the flowmeters or the temperature sensors is not resolved.
-- **Power supplies**: no measurement gives their losses. The HT channels
-  (`Haute_Tension`, `HT_Courant`) are RMS values only, with no power factor;
-  the `P1` active power of the `Fichiers_stats` files has offsets (−3.4 MW at
-  zero current, +2.3 MW jumps at constant load on 2024.07.15) and is not used.
-  `P_conv` is a conduction-loss model with placeholder `V_T0`, `r_T`; with
-  the real power-supply cooling flow, `TAlimout` can be used to fit them.
-- **`TAlimout` at zero current** stays 4–5 K above `Tin`, which the bridge
-  model cannot reproduce.
-- **Pump electrical power** is not measured (the HT channels are RMS only and
-  `Ptot` does not show the pumps). `--pump-coef` comes from one regression on the
-  HT1 feeder (run 2024.07.15; HT1 also supplies the A1/A2 converters), with
-  0.7–1.1 MW at full speed as the plausible range, for the M9 pumps only.
-  Pump speed always follows the magnet current on M9, so it cannot be
-  measured separately.
-- **What `Ptot` contains is not established.** The pupitre definition says
-  `Pmagnet` + pumps + other loads, but `Ptot` reads 0.00 MW at rest while
-  both pumps run at 1000 rpm, and `Ptot − Σ Puissance_A` is 9–11 % of the
-  converter DC power on every run checked (1.6–2.1 MW at 16–22 MW). A fit of
-  `Ptot − Σ Puissance_A` on currents and pump speed cannot separate a pump
-  term (pump speed follows the current). Hence `--ptot-includes-pumps` is
-  off by default; with it, `P_alim` is about 1 MW at full field.
+- **Power supplies**: their losses are only known as the remainder `P_alim`
+  of `Ptot`, for both groups together (about 1–1.2 MW at full field). The HT
+  channels (`Haute_Tension`, `HT_Courant`) are RMS values only, with no power
+  factor; the `P1` active power of the `Fichiers_stats` files has offsets
+  (−3.4 MW at zero current, +2.3 MW jumps at constant load on 2024.07.15) and
+  is not used. `P_conv` is a conduction-loss model of the bridges only, with
+  placeholder `V_T0`, `r_T`.
+- **`TAlimout` at zero current** stays 4–5 K above `Tin`; whether the
+  auxiliary pumps keep running at rest is not known.
+- **`Ptot` includes the magnet pumps**, as the site staff state: at constant
+  current, M9 run 2026.09.04 had pump 2 moved 2247 → 2780 → 1535 rpm and
+  `Ptot − Pmagnet` followed by +0.25 / −0.16 MW (the rpm³ law predicts
+  +0.27 / −0.21 MW); M9 2014.08.11 gives the same ratio. These are the only
+  such events found in 5329 files. `Ptot` reads 0 at rest because it is
+  only computed while the supplies run (at 0.5 MW it is even below
+  `Pmagnet`), not because the pumps are excluded.
+- **Pump electrical power** is not measured directly. `--pump-coef 0.023`
+  (0.021–0.025 MW per pump at 1000 rpm) comes from those pump-speed steps:
+  about 0.95 MW for the two M9 pumps at full field, against 0.50–0.53 MW of
+  hydraulic power, i.e. an overall efficiency of about 0.55. A fit of
+  `Ptot − Pmagnet` on currents and pump hydraulic power over 9500 plateaus
+  cannot separate the pump term (pump speed follows the current: 96–99 % of
+  its variance is explained by the currents).
 - **Magnet voltage taps differ between pigbrother and pupitre**: currents
   agree within 0.03 %, but `ALL_internes` is 0.2–0.3 % above
   `Σ Ucoil1–14` and `ALL_externes` 0.8–1.0 % above `Ucoil15 + Ucoil16`
@@ -222,21 +223,47 @@ Heat exchanger, M9 run 2026.10.02 with `--bdd`, two plateaus [MW, K]:
   natural convection and radiation. Their power (0.2–0.35 MW at full field)
   is therefore part of `Ptot` but of no water balance, and the script does
   not add it to any temperature or heat exchanger estimate.
-- **Heat exchanger does not close**: the river-water side carries 1.4–1.5
-  times the hot side at 15–20 MW, and up to 2.2 times at 3 MW (M9 runs
-  2024.07.15, 2026.07.22, 2026.09.30, 2026.10.02). On 2026.07.22 the plateaus
-  fit `Q_cold ≈ 1.08·Ptot + 1.7 MW`. With the magnet off and the pumps at
-  1000 rpm, `tsb − teb` stays about 0.9 K, i.e. ~1.3 MW on the cold side
-  against ~0.1 MW on the hot side. Either `teb`/`tsb` have an offset,
-  `debitbrut` reads high, or the river-water loop also cools other loads;
-  the data alone cannot tell.
+- **Heat exchanger does not close**: with the power-supply branch at
+  30 l/s, the river-water side carries 1.32–1.40 times the hot side at
+  11–22 MW (M9 2024.07.15, 2026.10.02); without the branch, 1.4–1.5 at
+  15–20 MW and up to 2.2 at 3 MW (also 2026.07.22, 2026.09.30). On 2026.07.22 the plateaus
+  fit `Q_cold ≈ 1.08·Ptot + 1.7 MW`; over 5000 M9/M10 plateaus,
+  `Q_cold ≈ 1.06–1.08·Ptot + 1.3–1.5 MW`. Likely causes, from the data:
+  - **`tsb − teb` offset of ≈ 0.8 K**: at rest (1196 windows, 2021–2026, no
+    current, pumps on), `tsb − teb` is 0.80 K (P10–P90 0.7–0.9) on both
+    housings, every year, whatever `debitbrut` (980–1300 m³/h), while the
+    primary water is only 0.45 K above `teb`: constant in K, not in MW, and
+    impossible as heat crossing the exchanger. Worth 0.9–1.5 MW at running
+    flows.
+  - **cold side ≈ 9 % high** once that offset is removed (`debitbrut` scale
+    or `tsb − teb` gain), against the ≈ 0.98·`Ptot` the water receives.
+  - **hot side ≈ 11 % low** (`k_cal ≈ 0.89`): single-magnet runs (idle branch
+    stopped, so no mixing at the `Tout` sensor) give the same `k_cal` as
+    two-magnet runs, with either branch, so neither poor mixing nor one
+    faulty flowmeter explains it; both flowmeters ≈ 11 % low is the most
+    likely cause (the SUPERVISION `ted`/`tsd` pair agrees with `Tout`/`Tin`
+    within 2 %).
 - **The two primary sensor pairs disagree on `Tout`**: `tsd` matches
   `(Tin1 + Tin2)/2` within 0.01–0.2 K, but `ted − Tout` depends on the load:
   about −0.4 K at 15–20 MW, +0.4 K at 3 MW and +0.9 K at rest. This is a gain
   (or linearity) difference between the two sensors, not a fixed offset, so
   `Q_hot` and `Q_hot_bdd` differ by 2 % at full power and up to 10 % at low
   power.
-- **Power-supply circuit**: `Q_hx_hot` includes it only through
-  `--conv-flow`. The pupitre definitions describe `TAlimout` as the
-  *transformer* cooling-loop outlet, so that circuit may carry more than the
-  bridge losses.
+- **Power-supply circuit flow is not measured**: the auxiliary circuit (own
+  pumps PA1–PA3, two parallel circuits A1/A2 and A3/A4, one outlet sensor
+  `TAlimout` after they merge) has no flowmeter. `F_alim_implied` gives
+  25–26 l/s on M9 2024.07.15, 33–38 l/s on M9 2026.10.02 and 32–34 l/s on
+  M10 2026.09.21, stable within each run; `--conv-flow` defaults to 30 l/s
+  (python_magnetcooling's `debit_alim` is 60 m³/h per circuit, i.e. 33 l/s
+  in total). Over 294 runs with pigbrother data (2021-11 to 2026-10, 30 min
+  plateaus above 5 MW), the implied flow scatters by 1.5 l/s within a run
+  but 5 l/s (M9) to 9 l/s (M10) between runs, in levels that hold for days
+  to weeks and then switch: M9 mostly 26–28 l/s, sometimes 34–38 l/s; M10
+  28–36 l/s, sometimes 14–20 l/s, with `TAlimout − Tin` doubling at the same
+  `P_alim` in those low periods. The flow therefore really changes, most
+  likely with the auxiliary-pump configuration (PA1–PA3, VA9/VA10); scripts
+  and results in [`cooling_investigations/`](cooling_investigations/). The branch carries about 1–1.2 MW at full field, far more
+  than the bridge conduction losses `P_conv` (≈ 0.15 MW with the default
+  `V_T0`, `r_T`): the circuit also cools the transformers (water/oil
+  exchangers), whose losses are part of `Ptot`. `TAlim_est`, based on
+  `P_conv` only, therefore stays far below the measured `TAlimout`.
