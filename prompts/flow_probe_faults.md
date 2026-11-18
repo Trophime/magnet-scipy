@@ -1,6 +1,8 @@
 # Flow probe faults in pupitre files: detection and reconstruction
 
-Status: plan, not implemented. Drafted 2026-11-17.
+Status: drafted 2026-11-17; detector implemented 2026-11-18
+(`magnet_scipy/flow_probe.py`, see Implementation). Viewer and campaign
+integration not done.
 Related: [flow_params_check.md](flow_params_check.md) (pump/flow model),
 [signal_residual_analysis.md](signal_residual_analysis.md) (residual
 windows, "sensor" cause).
@@ -50,7 +52,11 @@ is 0.049.
 | stuck at full scale, 165–172 l/s | 241 | 73 | 94% M10 | probe |
 | spikes / oscillations, head smooth | (inside "deviation", 3 114) | | e.g. M9_2015.04.27 GR1 | probe |
 | staircase: flow held 10–20 s on fast ramps, lags the head 20–40 s | thousands, ≤ 10 s, ≤ 6 l/s | | all sites | slow flowmeter update: **informational** |
-| `Rpm` channel frozen for the whole file | | | e.g. M10_2017.11.17/21 GR2 | rpm witness unusable |
+| meter at its ceiling (171.4 l/s) on every shot, hundreds of s each | | | M10_2017.11.17/21 GR2 | probe (stuck); spoils a per-file fit unless excluded |
+
+(Corrected 2026-11-18: M10_2017.11.17/21 were first read as a frozen `Rpm2`.
+`Rpm2` moves 1000–2691 rpm; the flat witness came from a fit spoiled by the
+ceiling samples. No frozen `Rpm` channel has been seen in real data yet.)
 
 M10 `Flow2` dropouts per year: 2017: 14, 2018: 42, **2019: 571**, 2020: 97,
 2021: 772, 2022: 1059, 2023: 638, 2024: 667. The probe or its connection
@@ -199,20 +205,61 @@ Downstream (`hydraulics_csv`, the cooling model, the
 `Tout = Tin + P/(ρ c_p Q)` check of parameter_identification) reads the
 filled column and can mask on the flag.
 
-## Proposed steps
+## Implementation (2026-11-18)
 
-1. `magnet_scipy/flow_probe.py`: `lag_first_order`, `calibrate_flow_witnesses`,
-   `classify_flow_samples`, `reconstruct_flow`, and a `check_flow_probe(df, group,
-   flow_params=None)` that returns a DataFrame with the filled flow and flags.
-   → verify: unit tests on synthetic series (dropout with head kept, pump
-   stop, stuck high, frozen rpm, gap at file edge) and a regression test on
-   `M10_2019.05.30---17:22:17.txt` (two runs, nothing on GR1).
-2. Viewer `flowprobe FILE...`: flow, `F_rpm`, `F_hp`, flagged and filled
-   samples; per-file event table on stdout.
-3. `build_M23072801_campaign.py`: write `flow_filled` / `flow_flag` in
+Done:
+
+1. Prototypes saved in [`examples/flow_probe/`](../examples/flow_probe/)
+   (README lists what each reproduces).
+2. `magnet_scipy/flow_probe.py`:
+   - `check_flow_probe(time, flow, rpm, hp, bp, *, flow_params=None, tau=None)`
+     returns a DataFrame (`time`, `flow`, `flow_rpm`, `flow_head`, `flag`,
+     `flow_filled`) and the `FlowWitnesses` calibration.
+   - Building blocks: `lag_first_order`, `calibrate_flow_witnesses`,
+     `classify_flow_samples`, `reconstruct_flow`; `FLAGS`, `REPAIRED`.
+   - Arrays in, group-agnostic: the GR → magnet pairing depends on the
+     housing (M10 insert on GR2).
+   - `tests/test_flow_probe.py`, 18 tests: synthetic dropout, pump stop
+     with static head, stuck, meter ceiling, spikes, stale staircase, real
+     flow dip, pump off, frozen rpm, prior slope, fixed τ, gap filling at
+     file edges, and the M10 2019.05.30 regression with real timestamps
+     (exactly 407–496 and 1142–1159 on GR2, nothing on GR1).
+
+Changes from the prototype, each forced by a test or a real file:
+
+| change | why |
+|---|---|
+| lag `α = 1 − exp(−dt/τ)` with real time steps | τ is a physical time constant; pupitre files have gaps (10 s in the M10 reference) |
+| lag chosen by the mean residual clipped at 15 l/s (was p95) | a fault covering > 5 % of the file took over p95 (τ = 30 s, σ = 5 l/s, fault hidden) |
+| slope fitted per file; `flow_params` slope only when the set point moves < 100 rpm | fixed prior slope gave hundreds of s of false `hydraulic` on C0 231017 and C4 240510 GR1 (fitted 0.049–0.051 vs prior 0.046) |
+| meter ceiling (value held ≥ 20 s above 90 % of the file's maximum) left out of the calibration | M10 2017.11.17/21: the ceiling at 171.4 l/s spoiled the fit (idle flow predicted at 73 instead of 50 l/s) |
+| `stuck` covers the whole run of the held value | ceiling edges within 5 l/s of the truth stayed `ok` and spoiled the gap offset (fill RMS on the synthetic ceiling 3.6–4.2 → 0.19 l/s on the plateau, 0.32 over the whole run) |
+| held ≥ 30 s is `stuck` even on a ramp; `stale` is 3–30 s | M10 2017.10.15: 445 s at 171 l/s on a ramp-down was `stale`, so not repaired |
+| `stale` when held on a ramp and off *either* witness | the lagged head absorbs part of a staircase |
+| ramp from the slope of the median-smoothed head witness over ±10 s | the max of the raw derivative fires on head quantisation |
+| gaps filled from the head witness (was set point) | it follows the pump state with only the meter lag: smaller offset error when a gap starts on a ramp |
+| no 1-sample widening of flagged runs | no partial edge values seen; widening blurs exact runs |
+
+Checks (records share unmounted on 2026-11-18, so the campaign was checked
+on the repo's `*_hydraulics_GR*.csv`, which hold the whole pupitre file):
+
+- Campaign, 44 group-runs, `flow_params` and τ = 10 / 5 s: only C2 240716
+  GR2 (22 s `hydraulic`) and C7 230919 GR1 (18 s `hydraulic`, the trip). No
+  probe flag. Slope 0.046–0.051 (GR1), 0.041–0.045 (GR2) l/s/rpm.
+- srvdata cases: M10 2019.05.30 (2 dropouts), 2017.10.15 (stuck 741–1186),
+  2015.08.13 (stuck 697–817), 2017.11.17/21 (stuck 250–500 s per shot,
+  calibration a ≈ −1 l/s, b = 0.051), 2014.04.12 GR1 (stuck 7009–7047);
+  pump stops 2024.10.06 / 2024.04.10 → `pump_off` only; M9 2015.04.27 GR1
+  spikes → `probe`.
+
+Next:
+
+3. Viewer `flowprobe FILE...`: flow, `flow_rpm`, `flow_head`, flagged and
+   filled samples; per-file event table on stdout.
+4. `build_M23072801_campaign.py`: write `flow_filled` / `flow_flag` in
    `<tag>_hydraulics_GR*.csv`.
-   → verify: no flags on the M9 campaign except known events (C7 trip).
-4. Optional: a census CLI over a records directory (per site/group/year),
+   → verify: config diffs limited to those columns; flags only C7, C2 240716.
+5. Optional: a census CLI over a records directory (per site/group/year),
    for the operators.
 
 ## Open
@@ -224,9 +271,12 @@ filled column and can mask on the flag.
   stuck at 484. Per-site value needed to make `stuck` exact.
 - `stale` (slow update on ramps): fill it as well, or only flag it? It
   biases a transient energy balance by up to ~6 l/s for 10–40 s.
-- No `flow_params` for M10 yet: the per-file fit is the only calibration
-  there, so files where rpm is frozen *and* the flow is faulty fall back to
-  the head alone.
+- No `flow_params` for M10 yet. The per-file fit is enough for detection
+  and filling; a file would only be fragile if the set point barely moved
+  and the flow was faulty for most of it.
+- Rerun `examples/flow_probe/campaign.py` on the raw pupitre files once
+  `~/LNCMIG-Data/records` is mounted again, and the M9 census with the
+  module instead of `detect2.py`.
 - Report the M10 `Flow2` probe degradation (2019 →) to operations, and the
   M9 GR1 flowmeter saturating/bursting at high flow (2025-06 → 2025-08).
 - Confirm on a longer post-trip record that the pumps take their set point
