@@ -78,7 +78,7 @@ def collect_cases(prefix: str = DEFAULT_PREFIX) -> dict[str, dict[str, Any]]:
 
 
 def write_summary(output_dir: Path, cases: dict[str, dict[str, Any]]) -> Path:
-    """Write ``summary.md``: wall time and current RMSE per run and method.
+    """Write ``summary.md``: wall time, current and voltage RMSE per run and method.
 
     Parameters
     ----------
@@ -111,14 +111,17 @@ def write_summary(output_dir: Path, cases: dict[str, dict[str, Any]]) -> Path:
     acc_path = output_dir / "accuracy.csv"
     if acc_path.stat().st_size > 1:
         acc = pd.read_csv(acc_path)
-        current = acc[acc["quantity"] == "current"]
-        for column, title in [
-            ("rmse_exp", "Current RMSE vs measurements [A]"),
-            ("rmse_ref", "Current RMSE vs reference solution [A]"),
-        ]:
-            tables.append((title, current.pivot_table(
-                index=[*index, "circuit"], columns="method", values=column,
-                aggfunc="first")))
+        for quantity, unit in [("current", "A"), ("voltage", "V")]:
+            rows = acc[acc["quantity"] == quantity]
+            for column, versus in [
+                ("rmse_exp", "measurements"),
+                ("rmse_ref", "reference solution"),
+            ]:
+                tables.append((
+                    f"{quantity.capitalize()} RMSE vs {versus} [{unit}]",
+                    rows.pivot_table(index=[*index, "circuit"], columns="method",
+                                     values=column, aggfunc="first"),
+                ))
 
     lines = ["# Solver benchmark on the test campaign", "", "## Runs", ""]
     runs = pd.DataFrame(

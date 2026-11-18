@@ -45,6 +45,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+import plot_results
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
@@ -158,6 +159,45 @@ def _sample(system, strategy: str, t: np.ndarray, y: np.ndarray) -> list[dict]:
     return samples
 
 
+def _trajectory(system, strategy: str, t: np.ndarray, y: np.ndarray,
+                max_points: int = 20000) -> dict[str, np.ndarray]:
+    """Thinned solution for plotting: currents and reference current or input voltage."""
+    circuits = system.circuits if hasattr(system, "circuits") else [system]
+    stride = max(1, len(t) // max_points)
+    ts = t[::stride]
+    traj = {"time": ts}
+    for k, circuit in enumerate(circuits):
+        cid = circuit.circuit_id
+        traj[f"{cid}/current"] = y[k, ::stride]
+        if strategy == "pid":
+            traj[f"{cid}/reference"] = np.asarray(circuit.reference_func(ts), dtype=float)
+        else:
+            traj[f"{cid}/voltage_input"] = np.asarray(circuit.voltage_func(ts), dtype=float)
+    return traj
+
+
+def _save_run(path: Path, setting: dict[str, Any], report: dict[str, Any]) -> Path:
+    """Save a run's thinned trajectory and experiment samples for ``plot_results``."""
+    traj = report["trajectory"]
+    circuits = list(dict.fromkeys(k.split("/")[0] for k in traj if "/" in k))
+    arrays = {
+        "case": np.array(setting["case"]),
+        "method": np.array(setting["method"]),
+        "rtol": np.array(setting["rtol"]),
+        "max_step": np.array(setting["max_step"]),
+        "strategy": np.array(report["strategy"]),
+        "circuits": np.array(circuits),
+        **traj,
+    }
+    for s in report["samples"]:
+        prefix = f"{s['circuit']}/exp_{s['quantity']}"
+        for x in ("time", "simulated", "measured"):
+            arrays[f"{prefix}_{x}"] = np.asarray(s[x], dtype=float)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(path, **arrays)
+    return path
+
+
 def _worker(case, method, rtol, atol, max_step, use_tracemalloc, out_queue):
     """Load ``case``, solve it once with ``method`` and report cost and samples."""
     try:
@@ -191,9 +231,10 @@ def _worker(case, method, rtol, atol, max_step, use_tracemalloc, out_queue):
                 traced_peak = tracemalloc.get_traced_memory()[1] / 1024**2
                 tracemalloc.stop()
 
-            samples = []
+            samples, trajectory = [], {}
             if result.success:
                 samples = _sample(system, strategy, result.time, result.solution)
+                trajectory = _trajectory(system, strategy, result.time, result.solution)
 
         meta = result.metadata
         out_queue.put(
@@ -210,6 +251,7 @@ def _worker(case, method, rtol, atol, max_step, use_tracemalloc, out_queue):
                 "rss_delta_mb": rss_after - rss_before,
                 "tracemalloc_peak_mb": traced_peak,
                 "samples": samples,
+                "trajectory": trajectory,
             }
         )
     except Exception:
@@ -400,6 +442,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--reference-rtol", type=float, default=1e-10)
     parser.add_argument("--reference-atol", type=float, default=1e-10)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument(
+        "--no-plots",
+        action="store_true",
+        help="Skip work_precision.png and the per-run plots/*.png",
+    )
     return parser.parse_args(argv)
 
 
@@ -429,7 +476,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    perf_rows, acc_rows = [], []
+    perf_rows, acc_rows, run_files = [], [], []
 
     for name in names:
         case = dict(all_cases[name])
@@ -486,6 +533,9 @@ def main(argv: list[str] | None = None) -> int:
                             row["tracemalloc_peak_mb"] = mem["tracemalloc_peak_mb"]
                     for acc in _accuracy_rows(ok[0]["samples"], reference):
                         acc_rows.append({**setting, **acc})
+                    run_name = plot_results.run_file_name(name, method, rtol)
+                    run_files.append(_save_run(
+                        args.output_dir / "runs" / f"{run_name}.npz", setting, ok[0]))
                     print(
                         f"{label} {row['wall_s_median']:9.2f} s  nfev={row['nfev']:<9} "
                         f"steps={row['n_steps']:<9} dRSS={row['rss_delta_mb']:8.1f} MB",
@@ -515,6 +565,9 @@ def main(argv: list[str] | None = None) -> int:
                     "rmse_ref", "max_abs_error_ref"]
             print(acc.reindex(columns=cols).to_string(index=False, float_format="%.3g"))
     print(f"\nResults written to {args.output_dir}")
+    if not args.no_plots:
+        plots = plot_results.plot_results_dir(args.output_dir, run_files)
+        print(f"{len(plots)} plots written to {args.output_dir}")
     return 0
 
 

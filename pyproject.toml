@@ -42,6 +42,8 @@ dev = [
     "mypy>=0.950",
     "ty>=0.0.1a20",
     "bandit[toml]>=1.7.9",
+    # pandas.DataFrame.to_markdown in benchmarks/bench_campaign.py
+    "tabulate>=0.9.0",
 ]
 # Optional JAX/diffrax solver stack (not needed by the scipy-based package)
 jax = [
@@ -79,6 +81,8 @@ dev = [
     "mypy>=0.950",
     "ty>=0.0.1a20",
     "bandit[toml]>=1.7.9",
+    # pandas.DataFrame.to_markdown in benchmarks/bench_campaign.py
+    "tabulate>=0.9.0",
 ]
 
 [project.scripts]

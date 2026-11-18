@@ -77,11 +77,19 @@ Only the Tout comparison mixes the two sources, so only it uses this offset. The
 
 ```bash
 ~/venvs/m9-analysis/bin/python examples/M9_M23072801/benchmark/build_summary.py /path/to/sweep \
-    [--output DIR] [--pig-shift 8.4]
+    [--output DIR] [--pig-shift 8.4] [--no-plots]
 ```
 
 This writes `summary.md` and `summary.csv` to `--output` (default: the sweep directory). A missing or failed run
-shows as `—`. To update the recorded files, use `--output examples/M9_M23072801`, then restore the provenance
+shows as `—`. Unless `--no-plots` is given, it also writes:
+
+- `summary.png`: the current and voltage RMSE vs measurements for each magnet, and the Tout RMSE (no lag, and after
+  the lag fit), against the wall time of the CLI run. Colour and marker show the method; filled markers are
+  `circuits-pid`, hollow ones `circuits-pid-temp`. The dashed line is the Tout error of the measured-U·I baseline.
+- `plots/<config>_<method>.png`: each run vs the measurements, one column per magnet: current with its reference,
+  current error, and controller output vs measured voltage.
+
+ To update the recorded files, use `--output examples/M9_M23072801`, then restore the provenance
 header at the top of `summary.md`.
 
 ## Reading the results

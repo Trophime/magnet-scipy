@@ -1,7 +1,9 @@
 """Summarise the M9 PID solver sweep produced by ``run_pid_sweep.sh``.
 
 Writes ``summary.md`` and ``summary.csv`` (performance, electrical metrics per magnet,
-calorimetric outlet temperature) into the output directory.
+calorimetric outlet temperature) into the output directory, plus ``summary.png``
+(cost vs error) and ``plots/<config>_<method>.png`` (each run vs the measurements)
+unless ``--no-plots`` is given.
 
 Usage
 -----
@@ -22,6 +24,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from scipy.optimize import least_squares
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "benchmarks"))
+import plot_results  # noqa: E402
 
 
 def _import_magnetcooling():
@@ -226,6 +231,121 @@ def to_markdown(df: pd.DataFrame, pig_shift: float) -> str:
     return "\n".join(md) + "\n"
 
 
+def plot_summary(df: pd.DataFrame, path: Path) -> Path:
+    """Plot cost vs error for every (config, method) of the sweep.
+
+    Panels: current and voltage RMSE vs measurements per magnet, and Tout RMSE
+    (no lag, and after the lag fit), each against the wall time of the full
+    CLI run. Colour and marker give the method, filled markers are
+    ``circuits-pid`` and hollow ones ``circuits-pid-temp``. The Tout panels
+    show the measured-U·I baseline as a dashed line.
+
+    Parameters
+    ----------
+    df : :class:`~pandas.DataFrame`
+        Output of :func:`build`.
+    path : Path
+        PNG file to write.
+
+    Returns
+    -------
+    Path
+        ``path``.
+    """
+    import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
+    from matplotlib.ticker import FuncFormatter
+
+    plain = FuncFormatter(lambda v, _: f"{v:g}")
+    sims = df[(df.config != "measured U·I") & (df["status"] == "ok")]
+    base = df[df.config == "measured U·I"].iloc[0]
+    cids = list(MAG)
+    panels = [
+        [(f"{cids[0]}_I_rmse", f"{cids[0]}: current RMSE vs exp [A]"),
+         (f"{cids[1]}_I_rmse", f"{cids[1]}: current RMSE vs exp [A]"),
+         ("tout_rmse0", "Tout RMSE, no lag [K]")],
+        [(f"{cids[0]}_U_rmse", f"{cids[0]}: voltage RMSE vs exp [V]"),
+         (f"{cids[1]}_U_rmse", f"{cids[1]}: voltage RMSE vs exp [V]"),
+         ("tout_rmse_fit", "Tout RMSE, lag fit [K]")],
+    ]
+    fig, axes = plt.subplots(2, 3, figsize=(16, 8.5), sharex=True)
+    for row, specs in zip(axes, panels):
+        for ax, (col, label) in zip(row, specs):
+            for _, r in sims.iterrows():
+                color, marker = plot_results.METHOD_STYLE.get(r.method, (plot_results.AUX, "o"))
+                filled = r.config == CONFIGS[0]
+                ax.plot(r.get("wall_s"), r.get(col), ls="none", marker=marker, ms=9, mew=2,
+                        color=color, markerfacecolor=color if filled else "none")
+            top = pd.to_numeric(sims.get(col), errors="coerce").max()
+            if col.startswith("tout"):
+                ax.axhline(base[col], color=plot_results.AUX, lw=1, ls="--")
+                top = np.nanmax([top, base[col]])
+            ax.set_xscale("log")
+            ax.xaxis.set_major_formatter(plain)
+            ax.xaxis.set_minor_formatter(plain)
+            if np.isfinite(top) and top > 0:
+                ax.set_ylim(0, 1.12 * top)
+            ax.set_title(label, fontsize=10)
+            ax.grid(alpha=0.3)
+            ax.spines[["top", "right"]].set_visible(False)
+    for ax in axes[1]:
+        ax.set_xlabel("wall time of the CLI run [s]")
+    methods = [Line2D([], [], ls="none", marker=mk, ms=9, color=c, label=m)
+               for m, (c, mk) in plot_results.METHOD_STYLE.items() if m in set(sims.method)]
+    configs = [Line2D([], [], ls="none", marker="o", ms=9, mew=2, color="k",
+                      markerfacecolor="k" if i == 0 else "none", label=cfg)
+               for i, cfg in enumerate(CONFIGS)]
+    configs.append(Line2D([], [], color=plot_results.AUX, ls="--", label="measured U·I (Tout)"))
+    fig.legend(handles=methods + configs, loc="lower center", ncols=len(methods) + len(configs),
+               frameon=False, fontsize=9)
+    fig.suptitle(f"M9 PID sweep: cost vs error (0–{T_END:g} s, max_step = 0.1 s)", fontsize=12)
+    fig.tight_layout(rect=(0, 0.05, 1, 1))
+    fig.savefig(path, dpi=130)
+    plt.close(fig)
+    return path
+
+
+def plot_runs(df: pd.DataFrame, sweep: Path, wd: Path, plots_dir: Path) -> list[Path]:
+    """Plot each successful run of the sweep against the measurements.
+
+    Parameters
+    ----------
+    df : :class:`~pandas.DataFrame`
+        Output of :func:`build`.
+    sweep : Path
+        Directory written by ``run_pid_sweep.sh`` (``<config>_<method>.npz``).
+    wd : Path
+        ``examples/M9_M23072801`` data directory.
+    plots_dir : Path
+        Directory of the ``<config>_<method>.png`` files.
+
+    Returns
+    -------
+    list of Path
+        PNG files written.
+    """
+    _, exp = _load_inputs(wd)
+    written = []
+    for _, r in df[(df.config != "measured U·I") & (df["status"] == "ok")].iterrows():
+        npz = sweep / f"{r.config}_{r.method}.npz"
+        if not npz.exists():
+            continue
+        d = np.load(npz, allow_pickle=True)
+        t = d["time"]
+        circuits = []
+        for cid in MAG:
+            c = {"id": cid, "current": d[f"{cid}_current"], "reference": d[f"{cid}_reference"]}
+            for quantity in ("current", "voltage"):
+                te, ve = exp[cid][quantity]
+                m = (te >= t.min()) & (te <= t.max())
+                c[f"{quantity}_exp"] = (te[m], np.interp(te[m], t, d[f"{cid}_{quantity}"]), ve[m])
+            circuits.append(c)
+        title = f"{r.config} — {r.method} rtol=1e-6, max_step=0.1 s (pid mode)"
+        written.append(plot_results.plot_run({"label": r.method, "time": t, "circuits": circuits},
+                                             title, plots_dir / f"{r.config}_{r.method}.png"))
+    return written
+
+
 def main(argv: list[str] | None = None) -> None:
     """Command-line entry point."""
     here = Path(__file__).resolve().parent
@@ -235,6 +355,8 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--output", type=Path, help="where to write summary.md/csv (default: the sweep directory)")
     ap.add_argument("--pig-shift", type=float, default=8.4,
                     help="pigbrother CSV t == pupitre t + shift [s] (see lag_sources.py)")
+    ap.add_argument("--no-plots", action="store_true",
+                    help="skip summary.png and the per-run plots/<config>_<method>.png")
     args = ap.parse_args(argv)
     out = args.output or args.sweep
     out.mkdir(parents=True, exist_ok=True)
@@ -243,6 +365,10 @@ def main(argv: list[str] | None = None) -> None:
     md = to_markdown(df, args.pig_shift)
     (out / "summary.md").write_text(md)
     print(md)
+    if not args.no_plots:
+        plots = [plot_summary(df, out / "summary.png")]
+        plots += plot_runs(df, args.sweep, args.wd, out / "plots")
+        print(f"{len(plots)} plots written to {out}")
 
 
 if __name__ == "__main__":
