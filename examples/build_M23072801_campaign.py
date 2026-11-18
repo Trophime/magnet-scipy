@@ -38,6 +38,9 @@ EXAMPLES = Path(__file__).resolve().parent
 BASE_CASE = EXAMPLES / "M9_M23072801"
 BASE_CONFIG = "circuits-pid-temp.json"
 R_TABLES = ("Rtot_14Helices.csv", "Rtot_M9Bitters_18MW.csv")
+# One python_magnetcooling flow params file per magnet (GR1, GR2), see
+# prompts/flow_params_check.md and fit_M23072801_flow_params.py.
+FLOW_PARAMS = ("M23072801-flow_params.json", "M9Bitters_18MW-flow_params.json")
 LONG_RUN_S = 3600.0  # above this, use a coarser max solver step
 ACTIVE_CURRENT_A = 100.0  # a GR whose pupitre current never exceeds this is off
 GAP_S = 5.0  # holes in the time series longer than this are reported
@@ -58,6 +61,11 @@ PUPITRE_VOLTAGE = {
     "GR2": ("Ucoil15", "Ucoil16"),
 }
 PUPITRE_TIN = {"GR1": "Tin1", "GR2": "Tin2"}
+# Pump speed [rpm], flow [l/s], inlet pressure [bar]; back pressure BP is shared.
+PUPITRE_HYDRAULICS = {
+    "GR1": {"rpm": "Rpm1", "flow": "Flow1", "hp": "HP1", "bp": "BP"},
+    "GR2": {"rpm": "Rpm2", "flow": "Flow2", "hp": "HP2", "bp": "BP"},
+}
 
 
 @dataclass
@@ -378,12 +386,22 @@ def build_run(con, run: str, data_root: Path, out: Path, base: dict) -> RunCase:
         write_series(out / tin, t_pup, tin_values, "temperature")
         write_series(out / i_meas, t, series[gr]["I"], "current")
         write_series(out / u_meas, t, series[gr]["U"], "voltage")
+        hydraulics = f"{tag}_hydraulics_{gr}.csv"
+        pd.DataFrame({
+            "time": t_pup,
+            "current": pup[list(PUPITRE_CURRENT[gr])].sum(axis=1).to_numpy(),
+            **{k: pup[c].to_numpy() for k, c in PUPITRE_HYDRAULICS[gr].items()},
+            # both supplies, for the per-shot ECO/NORMAL rule (magnet_scipy.operating_mode)
+            "ih": pup[list(PUPITRE_CURRENT["GR1"])].sum(axis=1).to_numpy(),
+            "ib": pup[list(PUPITRE_CURRENT["GR2"])].sum(axis=1).to_numpy(),
+        }).to_csv(out / hydraulics, index=False)
         circuit["reference_csv"] = ref
         circuit["temperature_csv"] = tin
         circuit["experiment_data"] = [
             {"type": "voltage", "key": "voltage", "file": u_meas},
             {"type": "current", "key": "current", "file": i_meas},
         ]
+        circuit["hydraulics_csv"] = hydraulics
         circuits.append(circuit)
 
     # Archives: those of the overview records, plus those the DB does not link
@@ -537,7 +555,17 @@ Always:
   pupitre rounds them to 0.1 °C; the file holds the taut string inside the
   ±0.05 °C band around the recorded values (smoothest curve compatible with
   the resolution, no window to tune). Half band per run in `provenance.json`.
+- `<tag>_hydraulics_GR*.csv`: pupitre current (`Idcct1 + Idcct2` or
+  `Idcct3 + Idcct4`) [A], pump speed `rpm` (`Rpm1`/`Rpm2`), `flow` [l/s]
+  (`Flow1`/`Flow2`), inlet pressure `hp` [bar] (`HP1`/`HP2`) and back pressure
+  `bp` [bar] (`BP`), plus both supply currents `ih`, `ib` [A] from which the
+  ECO/NORMAL mode of each sample is inferred; whole pupitre file, same time 0
+  (config key `hydraulics_csv`).
 - `Rtot_*.csv`, L, M and PID gains: copied from `M9_M23072801/{BASE_CONFIG}`.
+- `{FLOW_PARAMS[0]}`, `{FLOW_PARAMS[1]}`: water flow params of each magnet
+  (config key `flow_params`), copied from `M9_M23072801`. Compare them with the
+  measured hydraulics with `magnet-scipy-viewer flowcheck <config>.json ...`
+  (see [flow_params_check.md](../../prompts/flow_params_check.md)).
 
 Time 0 is the start of the window where the pupitre file and the Overview
 overlap. The two clocks are aligned on absolute time (pupitre local time →
@@ -571,8 +599,9 @@ def main() -> None:
     args = parser.parse_args()
 
     base = json.loads((BASE_CASE / BASE_CONFIG).read_text())
-    for circuit, table in zip(base["circuits"], R_TABLES):
+    for circuit, table, flow in zip(base["circuits"], R_TABLES, FLOW_PARAMS):
         circuit["resistance_csv"] = table
+        circuit["flow_params"] = flow
     provenance = {
         "db": args.db.name, "db_sha256": sha256(args.db),
         "assembly": ASSEMBLY, "base_config": f"M9_M23072801/{BASE_CONFIG}",
@@ -585,7 +614,7 @@ def main() -> None:
             continue
         out = EXAMPLES / group.dirname
         out.mkdir(exist_ok=True)
-        for table in R_TABLES:
+        for table in (*R_TABLES, *FLOW_PARAMS):
             shutil.copy(BASE_CASE / table, out / table)
         cases = [build_run(con, run, args.data_root.expanduser(), out, base) for run in group.runs]
         write_group_files(group, cases, provenance, out)

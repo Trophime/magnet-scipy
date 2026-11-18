@@ -6,6 +6,7 @@
       "temperature_csv": "240716-210814_Tin_GR1.csv",
       "inductance": 0.002315,
       "resistance_csv": "Rtot_14Helices.csv",
+      "flow_params": "M23072801-flow_params.json",
       "reference_csv": "240716-210814_reference_GR1.csv",
       "pid_params": {
         "Kp_low": 5.0,
@@ -31,13 +32,15 @@
           "key": "current",
           "file": "240716-210814_measured_I_GR1.csv"
         }
-      ]
+      ],
+      "hydraulics_csv": "240716-210814_hydraulics_GR1.csv"
     },
     {
       "circuit_id": "M9Bitters_18MW",
       "temperature_csv": "240716-210814_Tin_GR2.csv",
       "inductance": 0.01254,
       "resistance_csv": "Rtot_M9Bitters_18MW.csv",
+      "flow_params": "M9Bitters_18MW-flow_params.json",
       "reference_csv": "240716-210814_reference_GR2.csv",
       "pid_params": {
         "Kp_low": 4.0,
@@ -63,7 +66,8 @@
           "key": "current",
           "file": "240716-210814_measured_I_GR2.csv"
         }
-      ]
+      ],
+      "hydraulics_csv": "240716-210814_hydraulics_GR2.csv"
     }
   ],
   "mutual_inductances": [

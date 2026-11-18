@@ -46,7 +46,17 @@ Always:
   pupitre rounds them to 0.1 °C; the file holds the taut string inside the
   ±0.05 °C band around the recorded values (smoothest curve compatible with
   the resolution, no window to tune). Half band per run in `provenance.json`.
+- `<tag>_hydraulics_GR*.csv`: pupitre current (`Idcct1 + Idcct2` or
+  `Idcct3 + Idcct4`) [A], pump speed `rpm` (`Rpm1`/`Rpm2`), `flow` [l/s]
+  (`Flow1`/`Flow2`), inlet pressure `hp` [bar] (`HP1`/`HP2`) and back pressure
+  `bp` [bar] (`BP`), plus both supply currents `ih`, `ib` [A] from which the
+  ECO/NORMAL mode of each sample is inferred; whole pupitre file, same time 0
+  (config key `hydraulics_csv`).
 - `Rtot_*.csv`, L, M and PID gains: copied from `M9_M23072801/circuits-pid-temp.json`.
+- `M23072801-flow_params.json`, `M9Bitters_18MW-flow_params.json`: water flow params of each magnet
+  (config key `flow_params`), copied from `M9_M23072801`. Compare them with the
+  measured hydraulics with `magnet-scipy-viewer flowcheck <config>.json ...`
+  (see [flow_params_check.md](../../prompts/flow_params_check.md)).
 
 Time 0 is the start of the window where the pupitre file and the Overview
 overlap. The two clocks are aligned on absolute time (pupitre local time →
