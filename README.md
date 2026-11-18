@@ -353,6 +353,27 @@ The `flow` view needs the optional
 Its CSV has columns `current` [A], `pump_speed` [rpm], `flow_rate` [l/s],
 `pressure` [bar] and optionally `back_pressure` [bar].
 
+`flowcheck` compares the water flow params of each magnet with the measured
+hydraulics, without refitting (no `python_magnetcooling` needed):
+
+```bash
+magnet-scipy-viewer flowcheck examples/M9_M23072801_C*/circuit*-*.json [--threshold 300]
+```
+
+Each circuit of the configs needs `flow_params` (a `python_magnetcooling`
+flow params JSON: `Vp0`, `Vpmax`, `F0`, `Fmax`, `Pmin`, `Pmax`, `BP` or `Pout`,
+`Imax`) and `hydraulics_csv` (columns `time`, `current`, `rpm`, `flow`, `hp`,
+`bp`, and optionally both supply currents `ih`, `ib`). The M23072801 campaign
+directories have both (`examples/build_M23072801_campaign.py`). It prints
+model-minus-measurement bias and RMS per run, circuit and operating mode for |I|
+above the threshold, and draws one figure per magnet (pump speed, flow, HP and BP
+against |I|), coloured by mode. The mode of each sample is inferred shot by shot
+from `ih`/`ib` with magnetdb's ECO/NORMAL rule (`magnet_scipy.operating_mode`);
+`provenance.json` `modes` is the fallback. The solver ignores both keys. Both files of the
+M23072801 campaign (insert and M9 Bitters) are fitted by
+`examples/fit_M23072801_flow_params.py --group GR1|GR2`; see
+[prompts/flow_params_check.md](prompts/flow_params_check.md) for the results.
+
 ### Configuration Files
 
 #### Single Circuit Configuration

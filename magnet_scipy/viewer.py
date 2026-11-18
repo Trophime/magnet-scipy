@@ -17,6 +17,10 @@ compare
 flow
     Pump speed / flow / pressure against current with the
     ``python_magnetcooling`` fit (optional dependency).
+flowcheck
+    Flow params files (``flow_params`` of each circuit) against the measured
+    hydraulics (``hydraulics_csv``), per operating mode inferred for each
+    sample (:mod:`magnet_scipy.operating_mode`), with an RMS table.
 
 Command line::
 
@@ -619,6 +623,246 @@ def plot_flow_fit(
     return fig
 
 
+FLOW_QUANTITIES = {
+    "rpm": "pump speed [rpm]",
+    "flow": "flow [l/s]",
+    "hp": "inlet pressure HP [bar]",
+    "bp": "back pressure BP [bar]",
+}
+
+
+def flow_model(params: dict, current: np.ndarray) -> dict[str, np.ndarray]:
+    """Evaluate a water flow params file against current.
+
+    Same model as :class:`python_magnetcooling.waterflow.WaterFlow`:
+    ``Vp = Vpmax (I/Imax)^2 + Vp0``, ``F = F0 + Fmax Vp/(Vpmax+Vp0)``,
+    ``P = Pmin + Pmax (Vp/(Vpmax+Vp0))^2``, constant back pressure, all held
+    at their ``Imax`` value above ``Imax``.
+
+    Parameters
+    ----------
+    params : dict
+        Flow params, ``{"Vp0": {"value": ..., "unit": "rpm"}, ...}``; back
+        pressure under ``BP`` or ``Pout`` (optional).
+    current : :class:`~numpy.ndarray`
+        Current [A]; only its magnitude is used.
+
+    Returns
+    -------
+    dict of :class:`~numpy.ndarray`
+        ``rpm`` [rpm], ``flow`` [l/s], ``hp`` [bar] and ``bp`` [bar] (NaN when
+        the file has no back pressure).
+    """
+    v = {k: p["value"] for k, p in params.items()}
+    i = np.minimum(np.abs(np.asarray(current, float)), v["Imax"])
+    rpm = v["Vpmax"] * (i / v["Imax"]) ** 2 + v["Vp0"]
+    x = rpm / (v["Vpmax"] + v["Vp0"])
+    bp = v.get("BP", v.get("Pout", np.nan))
+    return {
+        "rpm": rpm,
+        "flow": v["F0"] + v["Fmax"] * x,
+        "hp": v["Pmin"] + v["Pmax"] * x**2,
+        "bp": np.full_like(i, bp),
+    }
+
+
+@dataclass
+class Hydraulics:
+    """Measured hydraulics of one circuit in one run, with its flow params.
+
+    Attributes
+    ----------
+    circuit : str
+        Circuit identifier.
+    run : str
+        Config file stem, e.g. ``"circuits-230919-190811"``.
+    params_file : str
+        Flow params file name.
+    params : dict
+        Flow params.
+    data : :class:`~pandas.DataFrame`
+        Columns ``time`` [s], ``current`` [A], ``rpm``, ``flow``, ``hp``,
+        ``bp`` and ``mode`` (operating mode of each sample, see
+        :func:`load_hydraulics`).
+    """
+
+    circuit: str
+    run: str
+    params_file: str
+    params: dict
+    data: pd.DataFrame
+
+
+def load_hydraulics(config_paths: list[str | Path]) -> list[Hydraulics]:
+    """Load the circuits that have both ``flow_params`` and ``hydraulics_csv``.
+
+    The operating mode of each sample is inferred shot by shot from the
+    ``ih`` / ``ib`` columns with :func:`magnet_scipy.operating_mode.shot_modes`
+    (``"ECO"``, ``"NORMAL"``, or ``"rest"`` when both supplies are off). A
+    shot the rule cannot classify, or a CSV without ``ih`` / ``ib``, falls back
+    to the ``modes`` of the run of ``provenance.json`` whose ``config`` is the
+    JSON (``overview_records.mode``), when there is exactly one; otherwise
+    ``"unknown"``.
+
+    Parameters
+    ----------
+    config_paths : list of str or :class:`~pathlib.Path`
+        Circuit JSON files (single circuit or ``circuits`` list); file names
+        are relative to each JSON.
+
+    Returns
+    -------
+    list of Hydraulics
+        One entry per circuit and config; circuits whose files are missing
+        are skipped with a warning.
+    """
+    from .operating_mode import shot_modes
+
+    out = []
+    for cfg in map(Path, config_paths):
+        config = json.loads(cfg.read_text())
+        prov_modes = (_provenance_run(cfg) or {}).get("modes") or []
+        fallback = prov_modes[0] if len(prov_modes) == 1 else "unknown"
+        for c in config.get("circuits", [config]):
+            if not (c.get("flow_params") and c.get("hydraulics_csv")):
+                continue
+            try:
+                params = json.loads((cfg.parent / c["flow_params"]).read_text())
+                data = _read_csv(str(cfg.parent / c["hydraulics_csv"]))
+            except FileNotFoundError as exc:
+                warnings.warn(f"{cfg.name} {c['circuit_id']}: skipped: {exc}")
+                continue
+            if {"ih", "ib"} <= set(data.columns):
+                mode = shot_modes(data["ih"].to_numpy(), data["ib"].to_numpy())
+                mode[mode == "UNKNOWN"] = fallback
+            else:
+                mode = np.full(len(data), fallback, dtype=object)
+            out.append(
+                Hydraulics(
+                    c["circuit_id"],
+                    cfg.stem,
+                    c["flow_params"],
+                    params,
+                    data.assign(mode=mode),
+                )
+            )
+    return out
+
+
+def _with_residuals(r: Hydraulics) -> pd.DataFrame:
+    """Data of a record plus ``res_<q>`` = model - measurement columns."""
+    model = flow_model(r.params, r.data["current"].to_numpy())
+    return r.data.assign(
+        **{f"res_{q}": model[q] - r.data[q].to_numpy(float) for q in FLOW_QUANTITIES}
+    )
+
+
+def flow_check_table(
+    records: list[Hydraulics], threshold: float = 300.0
+) -> pd.DataFrame:
+    """Bias and RMS of model minus measurement, per run, circuit and mode.
+
+    Parameters
+    ----------
+    records : list of Hydraulics
+        Output of :func:`load_hydraulics`.
+    threshold : float
+        Samples with ``|I|`` at or below this current [A] are ignored.
+
+    Returns
+    -------
+    :class:`~pandas.DataFrame`
+        One row per record and operating mode present above the threshold:
+        ``circuit``, ``run``, ``mode``, ``params``, ``n``, then ``<q>_bias``
+        and ``<q>_rms`` for ``q`` in rpm, flow, hp, bp.
+    """
+    rows = []
+    for r in records:
+        d = _with_residuals(r)
+        for mode, g in d[d["current"].abs() > threshold].groupby("mode"):
+            row = {
+                "circuit": r.circuit,
+                "run": r.run,
+                "mode": mode,
+                "params": r.params_file,
+                "n": len(g),
+            }
+            for q in FLOW_QUANTITIES:
+                res = g[f"res_{q}"].to_numpy()
+                row[f"{q}_bias"] = float(np.mean(res))
+                row[f"{q}_rms"] = float(np.sqrt(np.mean(res**2)))
+            rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def plot_flow_check(
+    records: list[Hydraulics], threshold: float = 300.0
+) -> list[Figure]:
+    """Plot measured pump speed, flow, HP and BP against the flow params model.
+
+    Parameters
+    ----------
+    records : list of Hydraulics
+        Output of :func:`load_hydraulics`.
+    threshold : float
+        Current [A] below which samples are left out of the RMS (drawn as a
+        dotted vertical line).
+
+    Returns
+    -------
+    list of :class:`~matplotlib.figure.Figure`
+        One figure per circuit: measurements coloured by the mode of each
+        sample, with the RMS of each mode in the legend, and one model curve
+        per flow params file.
+    """
+    import matplotlib.pyplot as plt
+
+    figs = []
+    for cid in dict.fromkeys(r.circuit for r in records):
+        recs = [r for r in records if r.circuit == cid]
+        data = pd.concat([_with_residuals(r) for r in recs], ignore_index=True)
+        fig, axes = plt.subplots(1, len(FLOW_QUANTITIES), figsize=(18, 4.8))
+        fig._label = cid  # type: ignore[attr-defined]
+        i_max = float(data["current"].abs().max())
+        for ax, (q, label) in zip(axes, FLOW_QUANTITIES.items(), strict=True):
+            for k, (mode, g) in enumerate(data.groupby("mode")):
+                res = g.loc[g["current"].abs() > threshold, f"res_{q}"].to_numpy()
+                name = (
+                    f"{mode}: RMS={np.sqrt(np.mean(res**2)):.3g}" if len(res) else mode
+                )
+                step = max(1, len(g) // DISPLAY_POINTS)
+                ax.plot(
+                    g["current"].abs()[::step],
+                    g[q][::step],
+                    ".",
+                    ms=1.5,
+                    alpha=0.4,
+                    color=_color(k),
+                    label=name,
+                )
+            ii = np.linspace(0.0, 1.05 * i_max, 300)
+            for j, f in enumerate(dict.fromkeys(r.params_file for r in recs)):
+                params = next(r.params for r in recs if r.params_file == f)
+                ax.plot(
+                    ii,
+                    flow_model(params, ii)[q],
+                    "k",
+                    ls=("-", "--", ":")[j % 3],
+                    lw=1.8,
+                    label=f,
+                )
+            ax.axvline(threshold, color="gray", ls=":", lw=0.8)
+            ax.set_xlabel("|I| [A]")
+            ax.set_ylabel(label)
+            ax.grid(alpha=0.3)
+            ax.legend(fontsize=7, markerscale=5)
+        n_runs = len({r.run for r in recs})
+        fig.suptitle(f"{cid}: flow params vs measured hydraulics ({n_runs} runs)")
+        fig.tight_layout()
+        figs.append(fig)
+    return figs
+
+
 def main(argv: list[str] | None = None) -> None:
     """Command-line entry point (``python -m magnet_scipy.viewer``)."""
     import matplotlib.pyplot as plt
@@ -645,7 +889,29 @@ def main(argv: list[str] | None = None) -> None:
     s.add_argument("--imax", type=float)
     s.add_argument("--method", default="simple", choices=("simple", "piecewise"))
     s.add_argument("--threshold", type=float, default=300.0)
+    s = sub.add_parser("flowcheck", help="flow params files vs measured hydraulics")
+    s.add_argument(
+        "config", nargs="+", help="circuit JSON(s) with flow_params and hydraulics_csv"
+    )
+    s.add_argument(
+        "--threshold", type=float, default=300.0, help="ignore |I| below [A]"
+    )
     a = p.parse_args(argv)
+
+    if a.view == "flowcheck":
+        records = load_hydraulics(a.config)
+        with pd.option_context("display.width", 200, "display.max_columns", None):
+            print(
+                flow_check_table(records, a.threshold).round(3).to_string(index=False)
+            )
+        figs = plot_flow_check(records, a.threshold)
+        if a.save:
+            for fig in figs:
+                path = Path(a.save)
+                fig.savefig(path.with_stem(f"{path.stem}_{fig._label}"), dpi=150)
+        else:
+            plt.show()
+        return
 
     if a.view == "overview":
         plot_overview(load_run(a.npz, a.config, a.wd, a.events))

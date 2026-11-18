@@ -210,6 +210,9 @@ CIRCUIT_CONFIG_KEYS = {
     "voltage_csv",
     "pid_params",
     "experiment_data",
+    # read by the viewer (flowcheck) and the cooling model; ignored by the solver
+    "flow_params",
+    "hydraulics_csv",
 }
 
 

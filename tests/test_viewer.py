@@ -198,6 +198,127 @@ def test_events_option_overrides_provenance(run_files, tmp_path):
     assert run.events == []
 
 
+FLOW_PARAMS = {
+    "Vp0": {"value": 1000.0, "unit": "rpm"},
+    "Vpmax": {"value": 1800.0, "unit": "rpm"},
+    "F0": {"value": 2.0, "unit": "l/s"},
+    "Fmax": {"value": 120.0, "unit": "l/s"},
+    "Pmax": {"value": 20.0, "unit": "bar"},
+    "Pmin": {"value": 4.0, "unit": "bar"},
+    "BP": {"value": 3.9, "unit": "bar"},
+    "Imax": {"value": 28000.0, "unit": "A"},
+}
+
+
+def test_flow_model_matches_waterflow_equations():
+    m = viewer.flow_model(FLOW_PARAMS, np.array([0.0, -14000.0, 28000.0, 40000.0]))
+    np.testing.assert_allclose(m["rpm"], [1000, 1450, 2800, 2800])
+    np.testing.assert_allclose(m["flow"], 2 + 120 * m["rpm"] / 2800)
+    np.testing.assert_allclose(m["hp"], 4 + 20 * (m["rpm"] / 2800) ** 2)
+    np.testing.assert_allclose(m["bp"], 3.9)
+    pout = {k: v for k, v in FLOW_PARAMS.items() if k != "BP"}
+    assert np.all(np.isnan(viewer.flow_model(pout, np.array([0.0]))["bp"]))
+    pout["Pout"] = {"value": 3.5, "unit": "bar"}
+    assert viewer.flow_model(pout, np.array([0.0]))["bp"][0] == 3.5
+
+
+def _hydraulics_case(tmp_path, name, mode, offset):
+    """Config + hydraulics CSV whose flow is the model plus ``offset`` [l/s]."""
+    i = np.linspace(0, 28000, 200)
+    m = viewer.flow_model(FLOW_PARAMS, i)
+    pd.DataFrame(
+        {
+            "time": np.arange(i.size),
+            "current": i,
+            "rpm": m["rpm"],
+            "flow": m["flow"] - offset,
+            "hp": m["hp"],
+            "bp": m["bp"],
+        }
+    ).to_csv(tmp_path / f"{name}_hydraulics.csv", index=False)
+    cfg = {
+        "circuit_id": "A",
+        "flow_params": "A-flow_params.json",
+        "hydraulics_csv": f"{name}_hydraulics.csv",
+    }
+    (tmp_path / f"{name}.json").write_text(json.dumps(cfg))
+    return {"config": f"{name}.json", "modes": [mode]}
+
+
+def test_flow_check_per_mode(tmp_path):
+    (tmp_path / "A-flow_params.json").write_text(json.dumps(FLOW_PARAMS))
+    runs = {
+        "eco": _hydraulics_case(tmp_path, "eco", "ECO", 0.0),
+        "normal": _hydraulics_case(tmp_path, "normal", "NORMAL", 5.0),
+    }
+    (tmp_path / "provenance.json").write_text(json.dumps({"runs": runs}))
+    (tmp_path / "nodata.json").write_text(
+        json.dumps(
+            {
+                "circuit_id": "A",
+                "flow_params": "A-flow_params.json",
+                "hydraulics_csv": "missing.csv",
+            }
+        )
+    )
+    with pytest.warns(UserWarning, match="missing.csv"):
+        records = viewer.load_hydraulics(
+            [tmp_path / "eco.json", tmp_path / "normal.json", tmp_path / "nodata.json"]
+        )
+    table = viewer.flow_check_table(records, threshold=300.0).set_index("mode")
+    assert table.loc["ECO", "flow_rms"] == pytest.approx(0.0, abs=1e-9)
+    assert table.loc["NORMAL", "flow_bias"] == pytest.approx(5.0)
+    assert table.loc["NORMAL", "rpm_rms"] == pytest.approx(0.0, abs=1e-9)
+    assert table.loc["ECO", "n"] == 197  # |I| > 300 A
+    (fig,) = viewer.plot_flow_check(records)
+    assert fig._label == "A" and len(fig.axes) == 4
+    fig.savefig(tmp_path / "flow.png")
+
+
+def test_flow_check_mode_per_sample(tmp_path):
+    """ih/ib columns: each shot gets its own mode, whatever provenance says."""
+    (tmp_path / "A-flow_params.json").write_text(json.dumps(FLOW_PARAMS))
+    up = np.linspace(0, 20000, 100)
+    ib1 = np.r_[up, up[::-1]]  # ECO shot: IH = 2.4 IB, flow 3 l/s below model
+    ib2 = np.r_[up, up[::-1]]  # NORMAL shot: IH = IB, flow on the model
+    rest = np.zeros(5)
+    ih = np.r_[rest, 2.4 * ib1, rest, ib2, rest]
+    ib = np.r_[rest, ib1, rest, ib2, rest]
+    m = viewer.flow_model(FLOW_PARAMS, ih)
+    offset = np.r_[rest, np.full(ib1.size, 3.0), rest, np.zeros(ib2.size), rest]
+    pd.DataFrame(
+        {
+            "time": np.arange(ih.size),
+            "current": ih,
+            "rpm": m["rpm"],
+            "flow": m["flow"] - offset,
+            "hp": m["hp"],
+            "bp": m["bp"],
+            "ih": ih,
+            "ib": ib,
+        }
+    ).to_csv(tmp_path / "h.csv", index=False)
+    (tmp_path / "run.json").write_text(
+        json.dumps(
+            {
+                "circuit_id": "A",
+                "flow_params": "A-flow_params.json",
+                "hydraulics_csv": "h.csv",
+            }
+        )
+    )
+    (tmp_path / "provenance.json").write_text(
+        json.dumps({"runs": {"r": {"config": "run.json", "modes": ["NORMAL"]}}})
+    )
+    (rec,) = viewer.load_hydraulics([tmp_path / "run.json"])
+    assert set(rec.data["mode"]) == {"ECO", "NORMAL", "rest"}
+    table = viewer.flow_check_table([rec]).set_index("mode")
+    assert list(table.index) == ["ECO", "NORMAL"]
+    assert table.loc["ECO", "flow_bias"] == pytest.approx(3.0)
+    assert table.loc["NORMAL", "flow_rms"] == pytest.approx(0.0, abs=1e-9)
+    viewer.plot_flow_check([rec])
+
+
 def test_flow_fit(tmp_path):
     pytest.importorskip("python_magnetcooling")
     rng = np.random.default_rng(0)
